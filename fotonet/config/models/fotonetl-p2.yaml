@@ -1,0 +1,29 @@
+# FOTO-NET Large P2 - high-capacity O2O target with P2 small-object head
+nc: 80
+depth_multiple: 0.50
+width_multiple: 0.55
+p2_head: true
+reg_max: 1
+p5_gate_blocks: 1
+neck_fusion: weighted
+p2_context_blocks: 1
+p3_context_blocks: 1
+quality_head: true
+
+backbone:
+  - [Conv, [3, 64, 3, 2]]
+  - [Conv, [64, 128, 3, 2]]
+  - [C2f, [128, 128, 3, True]]
+  - [Conv, [128, 256, 3, 2]]
+  - [C2f, [256, 256, 6, True]]
+  - [Conv, [256, 512, 3, 2]]
+  - [C2f, [512, 512, 9, True]]
+  - [Conv, [512, 1024, 3, 2]]
+  - [C2f, [1024, 1024, 3, True]]
+
+neck:
+  width_multiple: 1.0
+  depth_multiple: 1.0
+
+head:
+  width_multiple: 1.0

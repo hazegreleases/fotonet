@@ -1,0 +1,30 @@
+# FOTO-NET Nano-0 - P2-less edge/general deployment target
+nc: 80
+depth_multiple: 0.42
+width_multiple: 0.205
+p2_head: false
+reg_max: 1
+p5_extra_blocks: 1
+p5_gate_blocks: 2
+neck_fusion: weighted
+p2_context_blocks: 0
+p3_context_blocks: 1
+quality_head: false
+
+backbone:
+  - [Conv, [3, 64, 3, 2]]
+  - [Conv, [64, 128, 3, 2]]
+  - [C2f, [128, 128, 2, true]]
+  - [Conv, [128, 256, 3, 2]]
+  - [C2f, [256, 256, 5, true]]
+  - [Conv, [256, 512, 3, 2]]
+  - [C2f, [512, 512, 5, true]]
+  - [Conv, [512, 1024, 3, 2]]
+  - [C2f, [1024, 1024, 2, true]]
+
+neck:
+  width_multiple: 0.205
+  depth_multiple: 0.42
+
+head:
+  width_multiple: 0.205

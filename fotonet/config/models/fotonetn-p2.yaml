@@ -1,0 +1,30 @@
+# FOTO-NET Nano - O2O deployment target, P2 small-object head
+nc: 80
+depth_multiple: 0.33
+width_multiple: 0.20
+p2_head: true
+reg_max: 1
+p5_extra_blocks: 1
+p5_gate_blocks: 2
+neck_fusion: weighted
+p2_context_blocks: 1
+p3_context_blocks: 1
+quality_head: true
+
+backbone:
+  - [Conv, [3, 64, 3, 2]]
+  - [Conv, [64, 128, 3, 2]]
+  - [C2f, [128, 128, 2, True]]
+  - [Conv, [128, 256, 3, 2]]
+  - [C2f, [256, 256, 4, True]]
+  - [Conv, [256, 512, 3, 2]]
+  - [C2f, [512, 512, 4, True]]
+  - [Conv, [512, 1024, 3, 2]]
+  - [C2f, [1024, 1024, 2, True]]
+
+neck:
+  width_multiple: 0.25
+  depth_multiple: 0.33
+
+head:
+  width_multiple: 0.25

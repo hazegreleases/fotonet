@@ -1,0 +1,129 @@
+# FOTO-NET-N scratch recipe for COCO-style object detection.
+# Designed for full training, not smoke tests.
+
+model: fotonetn
+pretrained: false
+resume: false
+distill_teacher: null
+distill_weight: 0.0
+
+train:
+  epochs: 500
+  imgsz: 640
+  imgsz_schedule:
+    - [0.35, 640]
+  batch: 16
+  val_batch: 8
+  nbs: 128
+  workers: 4
+  pin_memory: true
+  cache_to_ram: true
+  ram_cache_images: 1024
+  cache_labels: true
+  disk_cache_images: false
+  amp: true
+  val_amp: true
+  cos_lr: true
+  compile_model: false
+  cuda_graphs: false
+  val_period: 5
+  val_subset_size: 0
+  full_val_after: 0.90
+  save_period: -1
+  slim_best: true
+  best_metric: mAP50_95
+
+optimizer:
+  # Current trainer implements SGD. Keep MuSGD as future recipe target once optimizer lands.
+  name: sgd
+  lr0: 0.0054
+  lrf: 0.015
+  momentum: 0.947
+  weight_decay: 0.00064
+  warmup_epochs: 3
+
+augment:
+  mosaic: 0.909
+  mixup: 0.012
+  copy_paste: 0.075
+  copy_paste_mode: flip
+  close_mosaic: 15
+  scale: 0.562
+  fliplr: 0.606
+  flipud: 0.0
+  degrees: 1.11
+  shear: 1.46
+  translate: 0.071
+  hsv_h: 0.014
+  hsv_s: 0.645
+  hsv_v: 0.566
+  bgr: 0.106
+  mixup_alpha: 32.0
+
+loss:
+  box: 7.5
+  cls: 1.0
+  dfl: 1.5
+  dfl_mean_over_coords: true
+  o2o_label_smoothing: 0.01
+  o2m_label_smoothing: 0.05
+  focal_gamma_pos: 2.0
+  focal_gamma_neg: 2.0
+  quality_targets: true
+  quality_power: 1.0
+  quality_floor: 0.05
+  quality_start_epoch: 25
+  quality_warmup_epochs: 50
+  qfl_beta: 2.0
+  hard_negative_topk: 256
+  hard_negative_weight: 0.10
+  hard_negative_min_score: 0.15
+  hard_negative_start_epoch: 8
+  hard_negative_warmup_epochs: 32
+  o2o_weight: 1.0
+  o2m_weight: 1.0
+  o2m_full_epochs: 250
+  o2m_sparse_epochs: 400
+  o2m_every_n_steps: 4
+  o2m_disable_epoch: 400
+  consistency_weight: 0.35
+  consistency_start_epoch: 10
+  consistency_warmup_epochs: 40
+  consistency_cls_weight: 0.25
+  consistency_box_weight: 0.75
+  prog_loss: true
+  prog_start_epoch: 1
+  prog_warmup_epochs: 60
+  cls_start_factor: 1.50
+  box_start_factor: 1.30
+  dfl_start_factor: 0.85
+  quality: 1.0
+  quality_loss_start_epoch: 1
+  quality_loss_warmup_epochs: 25
+
+matcher:
+  topk: 8
+  alpha: 1.0
+  beta: 2.0
+  cost_class: 2.0
+  cost_bbox: 2.0
+  cost_giou: 1.0
+  exact_o2o: true
+  exact_o2o_warmup_epochs: 10
+  exact_o2o_period: 8
+  exact_o2o_period_end_epoch: 250
+  min_small_assign: 4
+  small_obj_px: 8.0
+
+smoke_limits:
+  max_epochs_2500_images: 15
+  max_epochs_5000_images: 8
+  recommended_quick_check:
+    epochs: 2
+    max_images: 256
+    imgsz: 128
+    val_subset_size: 64
+    full_val_after: 1.01  # keep validation subset on final smoke epoch
+    mosaic: 0.0
+    mixup: 0.0
+    copy_paste: 0.0
