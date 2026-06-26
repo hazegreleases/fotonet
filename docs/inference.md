@@ -57,3 +57,7 @@ json_text = results.to_json()
 ```
 
 `to_pandas()` requires pandas.
+
+## Inference Timing
+
+Inference times are not out yet because the benchmark computer is IO bottlenecked, so the timing numbers are not reliable enough to publish.

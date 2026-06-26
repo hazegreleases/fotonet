@@ -101,6 +101,16 @@ model.export(format="onnx", path="dev-tools/runs/fotonet.onnx", imgsz=640)
 
 The alpha repository includes `fotonet-n` as the public nano checkpoint. Training outputs and development weights live outside the public surface.
 
+## Alpha Checkpoint Metrics
+
+`fotonet-n` is the alpha nano checkpoint included in this repository.
+
+| Checkpoint | mAP@.50:.95 | Parameters | MACs at 640 | GFLOPs at 640 |
+|---|---:|---:|---:|---:|
+| `fotonet-n` | 22.68% | 2.75M | 2.43G | 4.85G |
+
+Inference times are not out yet because the benchmark computer is IO bottlenecked, so the timing numbers are not reliable enough to publish.
+
 ## Documentation
 
 - Installation: `docs/installation.md`
