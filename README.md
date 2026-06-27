@@ -25,6 +25,12 @@ The alpha release is intended for experimentation, training runs, integration te
 ## Install
 
 ```bash
+pip install fotonet
+```
+
+### Or
+
+```bash
 git clone https://github.com/hazegreleases/fotonet.git
 cd fotonet
 python -m pip install torch torchvision numpy pillow pyyaml opencv-python matplotlib scipy tqdm
