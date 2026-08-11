@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fotonet"
+dynamic = ["version"]
+description = "Lightweight NMS-free object detection with a familiar API."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+    { name = "FOTO-NET contributors" }
+]
+keywords = ["object-detection", "computer-vision", "deep-learning", "fotonet"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+dependencies = [
+    "torch>=2.1",
+    "torchvision>=0.16",
+    "numpy>=1.23",
+    "pillow>=9.0",
+    "pyyaml>=6.0",
+    "pycocotools>=2.0.7",
+    "opencv-python>=4.7",
+    "matplotlib>=3.6",
+    "scipy>=1.10",
+    "tqdm>=4.64",
+]
+
+[project.optional-dependencies]
+metrics = []
+export = ["onnx>=1.14", "onnxruntime>=1.16", "onnxsim>=0.4.36"]
+dev = [
+    "build>=1.2",
+    "tomli>=2.0; python_version < '3.11'",
+    "twine>=5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/hazegreleases/fotonet"
+Documentation = "https://hazegreleases.github.io/fotonet/"
+Source = "https://github.com/hazegreleases/fotonet"
+
+[project.scripts]
+fotonet = "fotonet.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fotonet*"]
+exclude = ["datasets*", "dev-tools*", "tools*", "logs*", "runs*", "tests*"]
+
+[tool.setuptools.package-data]
+"fotonet.config.models" = ["*.yaml"]
+"fotonet.config.recipes" = ["*.yaml"]
+
+[tool.setuptools.dynamic]
+version = {attr = "fotonet._version.__version__"}

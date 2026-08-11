@@ -1,0 +1,6 @@
+nc: 80
+profile: n
+p2: false
+reg_max: 12
+quality_head: false
+architecture_schema: 1

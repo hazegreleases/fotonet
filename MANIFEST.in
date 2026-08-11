@@ -1,0 +1,8 @@
+prune dev-tools
+prune tests
+prune website
+prune docs/internal
+prune docs/superpowers
+exclude AGENTS.md
+global-exclude *.py[cod]
+global-exclude __pycache__

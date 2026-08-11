@@ -1,0 +1,81 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+site/
+tools/
+dev-tools/
+tests/
+release-dist/
+
+# Private agent, planning, and hosted-site workspaces
+/.agents/
+/.codex/
+/AGENTS.md
+/website/
+/docs/agent-workspace.md
+docs/internal/
+docs/superpowers/
+/docs/legacy-removal-proposal.md
+/docs/training-system-benchmark.md
+
+# Rejected alpha experiments retained only in the private workspace
+/docs/fold-experimental.md
+/fotonet/experimental/
+/fotonet/config/models/*-fold-exp.yaml
+/fotonet/config/models/*-semantic-half-exp.yaml
+
+
+# Local scratch folders
+local/
+scratch/
+examples/local/
+
+# Local datasets and training output
+datasets/
+logs/
+runs/
+wandb/
+tensorboard/
+finale-test/
+
+# Model weights and exported artifacts
+*.pt
+*.pth
+*.onnx
+*.engine
+*.torchscript
+*.mlpackage/
+*.mlmodel
+*.metadata.json
+
+# Local generated media
+*.mp4
+*.avi
+*.mov
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
