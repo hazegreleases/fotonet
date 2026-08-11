@@ -42,7 +42,7 @@ export function ThemeSwitch() {
           onClick={() => choose(item.id)}
         >
           <span className={`theme-dot theme-dot-${item.id}`} aria-hidden="true" />
-          {item.label}
+          <span className="theme-label">{item.label}</span>
         </button>
       ))}
     </div>

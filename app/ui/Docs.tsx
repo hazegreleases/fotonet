@@ -2,18 +2,30 @@ import Link from "next/link";
 import { docsNav } from "../data";
 import { AmbientShapes } from "./AmbientShapes";
 
+function DocumentationGroups() {
+  return docsNav.map((group) => (
+    <section key={group.label}>
+      <h2>{group.label}</h2>
+      <ul>
+        {group.items.map((item) => <li key={item.href}><Link href={item.href}>{item.label}</Link></li>)}
+      </ul>
+    </section>
+  ));
+}
+
 export function DocsSidebar() {
   return (
     <aside className="docs-sidebar" aria-label="Documentation navigation">
       <p className="sidebar-title">Manual / v0.8.0b2</p>
-      {docsNav.map((group) => (
-        <section key={group.label}>
-          <h2>{group.label}</h2>
-          <ul>
-            {group.items.map((item) => <li key={item.href}><Link href={item.href}>{item.label}</Link></li>)}
-          </ul>
-        </section>
-      ))}
+      <div className="docs-nav-groups"><DocumentationGroups /></div>
+      <details className="docs-nav-disclosure">
+        <summary>
+          <span>Documentation</span>
+          <small>Browse all sections</small>
+          <i aria-hidden="true" />
+        </summary>
+        <div className="docs-nav-mobile-groups"><DocumentationGroups /></div>
+      </details>
     </aside>
   );
 }

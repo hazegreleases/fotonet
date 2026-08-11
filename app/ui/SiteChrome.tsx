@@ -20,6 +20,19 @@ export function SiteHeader() {
           ))}
         </nav>
         <ThemeSwitch />
+        <details className="mobile-nav">
+          <summary>
+            <span>Menu</span>
+            <i aria-hidden="true" />
+          </summary>
+          <nav aria-label="Mobile navigation">
+            {primaryNav.map((item) => item.external ? (
+              <a key={item.href} href={item.href} target="_blank" rel="noreferrer">{item.label}<span aria-hidden="true">↗</span></a>
+            ) : (
+              <Link key={item.href} href={item.href}>{item.label}</Link>
+            ))}
+          </nav>
+        </details>
       </div>
     </header>
   );
