@@ -1,5 +1,6 @@
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { ExampleRepositories } from "../../ui/ExampleRepositories";
 import { pageMetadata } from "../../seo";
 
 export const metadata = pageMetadata({
@@ -211,6 +212,7 @@ print({"overlap": overlap, "iou": iou, "bottom_distance_px": distance_px})`} lab
         </ol>
       </section>
 
+      <ExampleRepositories topic="transforms" />
       <NextLinks items={[
         { href: "/docs/examples", label: "Download every example", detail: "Complete command-line scripts and run commands" },
         { href: "/docs/inference", label: "Back to inference", detail: "Results creation, filtering, and retained pixels" },

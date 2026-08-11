@@ -6,8 +6,9 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "vinext dev",
-    "build": "vinext build",
+    "generate:projects": "python scripts/generate_repository_projects.py",
+    "dev": "npm run generate:projects && vinext dev",
+    "build": "npm run generate:projects && vinext build",
     "start": "vinext start",
     "export:pages": "npm run build && node scripts/export-pages.mjs",
     "verify": "npm run export:pages && node scripts/verify-pages.mjs",

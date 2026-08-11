@@ -21,7 +21,11 @@ export function CodeBlock({ code, language = "python", label }: { code: string; 
   async function copy() {
     try {
       if (window.isSecureContext && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(code);
+        try {
+          await navigator.clipboard.writeText(code);
+        } catch {
+          fallbackCopy();
+        }
       } else {
         fallbackCopy();
       }

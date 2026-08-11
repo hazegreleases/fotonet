@@ -1,0 +1,11 @@
+checkpoint = "weights/fotonetn.pt"
+data = "datasets/coco/coco.yaml"
+source = "video/entrance.mp4"
+output = "outputs/events.jsonl"
+imgsz = 640
+batch = 1
+confidence = 0.25
+max_detections = 300
+class_name = "person"
+device = "cuda:0"
+zone_xywh = [0.50, 0.65, 0.55, 0.42]

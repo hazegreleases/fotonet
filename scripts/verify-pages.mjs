@@ -5,10 +5,18 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const output = join(root, "pages-dist");
+const repositoryTopics = [
+  "inference", "data", "training", "validation", "export",
+  "examples", "models", "checkpoints", "api", "transforms",
+];
+const projectRoutes = repositoryTopics.flatMap((topic) =>
+  [1, 2, 3].map((tier) => `code/${topic}/tier-${tier}`),
+);
 const routes = [
   "", "benchmarks", "docs", "docs/api", "docs/checkpoints", "docs/cli",
   "docs/data", "docs/examples", "docs/export", "docs/inference", "docs/install",
   "docs/models", "docs/training", "docs/transforms", "docs/validation",
+  ...projectRoutes,
 ];
 const titles = new Set();
 const descriptions = new Set();
@@ -19,7 +27,7 @@ for (const route of routes) {
   assert.doesNotMatch(html, /chatgpt\.site|dev-tools\//i, route || "/");
   assert.doesNotMatch(html, /from fotonet import FOTONET/, route || "/");
   assert.doesNotMatch(html, /theme-switch|data-theme|fotonet-theme|blueprint/i, route || "/");
-  assert.doesNotMatch(html, /<script(?![^>]*(?:static-runtime\.js|application\/ld\+json|fotonet-color-mode))/i, route || "/");
+  assert.doesNotMatch(html, /<script(?![^>]*(?:static-runtime\.js|application\/ld\+json|fotonet-color-mode|data-project-files))/i, route || "/");
   assert.match(html, /<script id="fotonet-color-mode">/, route || "/");
   assert.doesNotMatch(html, /(?:href|src)="\/(?!fotonet\/)/i, route || "/");
   assert.match(html, /\/fotonet\/static-runtime\.js/, route || "/");
@@ -50,6 +58,38 @@ const transforms = await readFile(join(output, "docs", "transforms", "index.html
 assert.match(transforms, /AnchorPoint\.BOTTOM/);
 assert.match(transforms, /pixel_contains/);
 assert.match(transforms, /focus_reset/);
+const transformProject = await readFile(join(output, "code", "transforms", "tier-3", "index.html"), "utf8");
+assert.match(transformProject, />11<\/dd>/);
+assert.match(transformProject, /<dt>Source<\/dt>/);
+assert.match(transformProject, /<dt>Average<\/dt>/);
+assert.match(transformProject, /\/fotonet\/examples\/projects\/transform-zone-system\.zip/);
+const allRounderProject = await readFile(join(output, "code", "examples", "tier-3", "index.html"), "utf8");
+assert.match(allRounderProject, />30<\/dd>/);
+assert.match(allRounderProject, /<dt>Source<\/dt>/);
+assert.match(allRounderProject, /<dt>Average<\/dt>/);
+assert.match(allRounderProject, /\/fotonet\/examples\/projects\/fotonet-all-rounder\.zip/);
+for (const [project, expectedFiles, minimumAverage, maximumAverage] of [
+  ["transform-zone-system", 11, 65, 80],
+  ["fotonet-all-rounder", 30, 140, 160],
+]) {
+  const projectRoot = join(output, "examples", "projects", project);
+  const manifest = JSON.parse(await readFile(join(projectRoot, "manifest.json"), "utf8"));
+  assert.equal(manifest.files.length, expectedFiles);
+  const averageLines = manifest.files.reduce((total, file) => total + file.lines, 0) / manifest.files.length;
+  assert.ok(averageLines >= minimumAverage && averageLines <= maximumAverage, `${project}: ${averageLines}`);
+  for (const file of manifest.files) await access(join(projectRoot, file.path));
+  await access(join(output, "examples", "projects", `${project}.zip`));
+}
+for (const topic of repositoryTopics) {
+  const guide = await readFile(join(output, "docs", topic, "index.html"), "utf8");
+  for (const tier of [1, 2, 3]) {
+    assert.match(guide, new RegExp(`/fotonet/code/${topic}/tier-${tier}`));
+    const project = await readFile(join(output, "code", topic, `tier-${tier}`, "index.html"), "utf8");
+    assert.match(project, /data-project-workspace/);
+    assert.match(project, /data-project-file="0"/);
+    assert.match(project, /class="project-code-viewport"/);
+  }
+}
 await access(join(output, ".nojekyll"));
 await access(join(output, "404.html"));
 const home = await readFile(join(output, "index.html"), "utf8");

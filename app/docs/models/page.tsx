@@ -1,5 +1,6 @@
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
 import { CodeBlock } from "../../ui/CodeBlock";
+import { ExampleRepositories } from "../../ui/ExampleRepositories";
 import { modelGuidance, modelMetrics } from "../../data";
 import { pageMetadata } from "../../seo";
 
@@ -95,6 +96,7 @@ export default function ModelsPage() {
           <li><b>Head</b><span>One-to-one output is used for NMS-free inference; one-to-many branches exist only for training supervision.</span></li>
         </ol>
       </section>
+      <ExampleRepositories topic="models" />
       <NextLinks items={[
         { href: "/benchmarks", label: "Compare measured cost", detail: "All models at one declared runtime" },
         { href: "/docs/training", label: "Train the selected graph", detail: "Strict launch and resume contract" },

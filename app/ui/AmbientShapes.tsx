@@ -35,6 +35,9 @@ export function AmbientShapes({ variant }: { variant: ShapeVariant }) {
       <span className="ambient-shape shape-two" />
       <span className="ambient-shape shape-three" />
       <span className="ambient-shape shape-four" />
+      <span className="ambient-shape shape-five" />
+      <span className="ambient-shape shape-six" />
+      <span className="ambient-shape shape-seven" />
     </div>
   );
 }

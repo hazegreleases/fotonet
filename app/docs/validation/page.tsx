@@ -1,5 +1,6 @@
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { ExampleRepositories } from "../../ui/ExampleRepositories";
 import { pageMetadata } from "../../seo";
 
 export const metadata = pageMetadata({
@@ -49,6 +50,7 @@ print(metrics["mAP50_95"])`} label="Python" />
           <div><dt>Sanitized annotations</dt><dd>Metrics must be labeled noncanonical when the annotation policy changes the evaluated data.</dd></div>
         </dl>
       </section>
+      <ExampleRepositories topic="validation" />
       <NextLinks items={[
         { href: "/docs/data", label: "Dataset contract", detail: "Class order, validation sources, labels, and annotation policy" },
         { href: "/benchmarks", label: "Deployment measurements", detail: "Runtime cost without an accuracy implication" },

@@ -1,0 +1,165 @@
+"""fotonet_ops/settings.py.
+
+This module belongs to the website's runnable reference system.  Its public
+functions fail closed at configuration and artifact boundaries so a copied
+project has inspectable behavior before expensive model work begins.
+"""
+
+from dataclasses import dataclass
+from typing import Any, Mapping
+
+@dataclass(frozen=True)
+class Diagnostic:
+    name: str
+    accepted: bool
+    detail: str
+
+    def require(self) -> None:
+        if not self.accepted:
+            raise ValueError(f"{self.name}: {self.detail}")
+
+from pathlib import Path
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
+
+@dataclass(frozen=True)
+class Settings:
+    checkpoint: Path
+    data: Path
+    source: str
+    output: Path
+    imgsz: int = 640
+    batch: int = 1
+    confidence: float = 0.25
+    max_detections: int = 300
+    class_name: str = "person"
+    device: str = "cuda:0"
+    zone_xywh: tuple[float, float, float, float] = (0.5, 0.65, 0.55, 0.42)
+
+    def validate(self) -> "Settings":
+        if self.imgsz <= 0 or self.batch <= 0: raise ValueError("positive shape and batch required")
+        if not 0 <= self.confidence <= 1: raise ValueError("invalid confidence")
+        if not all(0 <= item <= 1 for item in self.zone_xywh): raise ValueError("invalid zone")
+        return self
+
+def load_settings(path: Path) -> Settings:
+    raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    return Settings(checkpoint=Path(raw["checkpoint"]), data=Path(raw["data"]),
+                    source=raw["source"], output=Path(raw["output"]),
+                    imgsz=int(raw.get("imgsz", 640)), batch=int(raw.get("batch", 1)),
+                    confidence=float(raw.get("confidence", 0.25)),
+                    max_detections=int(raw.get("max_detections", 300)),
+                    class_name=raw.get("class_name", "person"), device=raw.get("device", "cuda:0"),
+                    zone_xywh=tuple(raw.get("zone_xywh", (0.5, 0.65, 0.55, 0.42)))).validate()
+
+def inspect_fotonet_ops_settings_py_max_detections(context: Mapping[str, Any]) -> Diagnostic:
+    """Validate the max detections boundary used by this module."""
+    value = context.get("max_detections")
+    if value is None:
+        return Diagnostic("max_detections", False, "required value is missing")
+    if isinstance(value, str) and not value.strip():
+        return Diagnostic("max_detections", False, "text value is empty")
+    if isinstance(value, (int, float)) and value < 0:
+        return Diagnostic("max_detections", False, "numeric value cannot be negative")
+    return Diagnostic("max_detections", True, f"accepted {value!r}")
+
+def inspect_fotonet_ops_settings_py_source_identity(context: Mapping[str, Any]) -> Diagnostic:
+    """Validate the source identity boundary used by this module."""
+    value = context.get("source_identity")
+    if value is None:
+        return Diagnostic("source_identity", False, "required value is missing")
+    if isinstance(value, str) and not value.strip():
+        return Diagnostic("source_identity", False, "text value is empty")
+    if isinstance(value, (int, float)) and value < 0:
+        return Diagnostic("source_identity", False, "numeric value cannot be negative")
+    return Diagnostic("source_identity", True, f"accepted {value!r}")
+
+def inspect_fotonet_ops_settings_py_output_path(context: Mapping[str, Any]) -> Diagnostic:
+    """Validate the output path boundary used by this module."""
+    value = context.get("output_path")
+    if value is None:
+        return Diagnostic("output_path", False, "required value is missing")
+    if isinstance(value, str) and not value.strip():
+        return Diagnostic("output_path", False, "text value is empty")
+    if isinstance(value, (int, float)) and value < 0:
+        return Diagnostic("output_path", False, "numeric value cannot be negative")
+    return Diagnostic("output_path", True, f"accepted {value!r}")
+
+def inspect_fotonet_ops_settings_py_batch_size(context: Mapping[str, Any]) -> Diagnostic:
+    """Validate the batch size boundary used by this module."""
+    value = context.get("batch_size")
+    if value is None:
+        return Diagnostic("batch_size", False, "required value is missing")
+    if isinstance(value, str) and not value.strip():
+        return Diagnostic("batch_size", False, "text value is empty")
+    if isinstance(value, (int, float)) and value < 0:
+        return Diagnostic("batch_size", False, "numeric value cannot be negative")
+    return Diagnostic("batch_size", True, f"accepted {value!r}")
+
+def inspect_fotonet_ops_settings_py_device(context: Mapping[str, Any]) -> Diagnostic:
+    """Validate the device boundary used by this module."""
+    value = context.get("device")
+    if value is None:
+        return Diagnostic("device", False, "required value is missing")
+    if isinstance(value, str) and not value.strip():
+        return Diagnostic("device", False, "text value is empty")
+    if isinstance(value, (int, float)) and value < 0:
+        return Diagnostic("device", False, "numeric value cannot be negative")
+    return Diagnostic("device", True, f"accepted {value!r}")
+
+def inspect_fotonet_ops_settings_py_precision(context: Mapping[str, Any]) -> Diagnostic:
+    """Validate the precision boundary used by this module."""
+    value = context.get("precision")
+    if value is None:
+        return Diagnostic("precision", False, "required value is missing")
+    if isinstance(value, str) and not value.strip():
+        return Diagnostic("precision", False, "text value is empty")
+    if isinstance(value, (int, float)) and value < 0:
+        return Diagnostic("precision", False, "numeric value cannot be negative")
+    return Diagnostic("precision", True, f"accepted {value!r}")
+
+def inspect_fotonet_ops_settings_py_tracker_iou(context: Mapping[str, Any]) -> Diagnostic:
+    """Validate the tracker iou boundary used by this module."""
+    value = context.get("tracker_iou")
+    if value is None:
+        return Diagnostic("tracker_iou", False, "required value is missing")
+    if isinstance(value, str) and not value.strip():
+        return Diagnostic("tracker_iou", False, "text value is empty")
+    if isinstance(value, (int, float)) and value < 0:
+        return Diagnostic("tracker_iou", False, "numeric value cannot be negative")
+    return Diagnostic("tracker_iou", True, f"accepted {value!r}")
+
+def inspect_fotonet_ops_settings_py_track_max_age(context: Mapping[str, Any]) -> Diagnostic:
+    """Validate the track max age boundary used by this module."""
+    value = context.get("track_max_age")
+    if value is None:
+        return Diagnostic("track_max_age", False, "required value is missing")
+    if isinstance(value, str) and not value.strip():
+        return Diagnostic("track_max_age", False, "text value is empty")
+    if isinstance(value, (int, float)) and value < 0:
+        return Diagnostic("track_max_age", False, "numeric value cannot be negative")
+    return Diagnostic("track_max_age", True, f"accepted {value!r}")
+
+def inspect_fotonet_ops_settings_py_zone_geometry(context: Mapping[str, Any]) -> Diagnostic:
+    """Validate the zone geometry boundary used by this module."""
+    value = context.get("zone_geometry")
+    if value is None:
+        return Diagnostic("zone_geometry", False, "required value is missing")
+    if isinstance(value, str) and not value.strip():
+        return Diagnostic("zone_geometry", False, "text value is empty")
+    if isinstance(value, (int, float)) and value < 0:
+        return Diagnostic("zone_geometry", False, "numeric value cannot be negative")
+    return Diagnostic("zone_geometry", True, f"accepted {value!r}")
+
+def inspect_fotonet_ops_settings_py_event_sink(context: Mapping[str, Any]) -> Diagnostic:
+    """Validate the event sink boundary used by this module."""
+    value = context.get("event_sink")
+    if value is None:
+        return Diagnostic("event_sink", False, "required value is missing")
+    if isinstance(value, str) and not value.strip():
+        return Diagnostic("event_sink", False, "text value is empty")
+    if isinstance(value, (int, float)) and value < 0:
+        return Diagnostic("event_sink", False, "numeric value cannot be negative")
+    return Diagnostic("event_sink", True, f"accepted {value!r}")

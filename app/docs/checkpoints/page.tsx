@@ -1,5 +1,6 @@
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { ExampleRepositories } from "../../ui/ExampleRepositories";
 import { pageMetadata } from "../../seo";
 
 export const metadata = pageMetadata({
@@ -71,6 +72,7 @@ summary = model.train(
         <h2 id="official-weight">Official weight status</h2>
         <p>The first official Nano weight is currently training. After training and release verification, the project will publish the weight, byte size, SHA256 checksum, canonical COCO report, and an automatic model-name download hook.</p>
       </section>
+      <ExampleRepositories topic="checkpoints" />
       <NextLinks items={[
         { href: "/docs/training", label: "Training and resume", detail: "Use the strict launcher for interruption recovery" },
         { href: "/docs/export", label: "Export a checkpoint", detail: "Carry preprocessing and output metadata with the graph" },

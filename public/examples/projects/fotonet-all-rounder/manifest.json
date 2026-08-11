@@ -1,0 +1,125 @@
+{
+  "project": "fotonet-all-rounder",
+  "files": [
+    {
+      "path": "pyproject.toml",
+      "lines": 19
+    },
+    {
+      "path": "README.md",
+      "lines": 18
+    },
+    {
+      "path": "config/application.toml",
+      "lines": 11
+    },
+    {
+      "path": "fotonet_ops/__init__.py",
+      "lines": 166
+    },
+    {
+      "path": "fotonet_ops/errors.py",
+      "lines": 162
+    },
+    {
+      "path": "fotonet_ops/settings.py",
+      "lines": 165
+    },
+    {
+      "path": "fotonet_ops/domain.py",
+      "lines": 168
+    },
+    {
+      "path": "fotonet_ops/logging.py",
+      "lines": 160
+    },
+    {
+      "path": "fotonet_ops/datasets.py",
+      "lines": 169
+    },
+    {
+      "path": "fotonet_ops/checkpoints.py",
+      "lines": 168
+    },
+    {
+      "path": "fotonet_ops/training.py",
+      "lines": 169
+    },
+    {
+      "path": "fotonet_ops/detector.py",
+      "lines": 160
+    },
+    {
+      "path": "fotonet_ops/transforms.py",
+      "lines": 165
+    },
+    {
+      "path": "fotonet_ops/tracking.py",
+      "lines": 162
+    },
+    {
+      "path": "fotonet_ops/events.py",
+      "lines": 161
+    },
+    {
+      "path": "fotonet_ops/storage.py",
+      "lines": 170
+    },
+    {
+      "path": "fotonet_ops/pipeline.py",
+      "lines": 163
+    },
+    {
+      "path": "fotonet_ops/validation.py",
+      "lines": 162
+    },
+    {
+      "path": "fotonet_ops/exporting.py",
+      "lines": 168
+    },
+    {
+      "path": "fotonet_ops/benchmarking.py",
+      "lines": 169
+    },
+    {
+      "path": "fotonet_ops/health.py",
+      "lines": 162
+    },
+    {
+      "path": "fotonet_ops/app.py",
+      "lines": 169
+    },
+    {
+      "path": "fotonet_ops/cli.py",
+      "lines": 163
+    },
+    {
+      "path": "tests/__init__.py",
+      "lines": 170
+    },
+    {
+      "path": "tests/test_settings.py",
+      "lines": 166
+    },
+    {
+      "path": "tests/test_checkpoints.py",
+      "lines": 164
+    },
+    {
+      "path": "tests/test_transforms.py",
+      "lines": 162
+    },
+    {
+      "path": "tests/test_tracking.py",
+      "lines": 165
+    },
+    {
+      "path": "tests/test_pipeline.py",
+      "lines": 167
+    },
+    {
+      "path": "tests/test_validation.py",
+      "lines": 163
+    }
+  ]
+}

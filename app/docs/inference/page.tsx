@@ -1,5 +1,6 @@
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { ExampleRepositories } from "../../ui/ExampleRepositories";
 import { pageMetadata } from "../../seo";
 
 export const metadata = pageMetadata({
@@ -59,6 +60,7 @@ export default function InferencePage() {
         </dl>
         <Note title="NMS-free means no hidden NMS switch"><p>The production runtime performs score selection, confidence filtering, clipping, and top-k limiting. It does not expose a second NMS inference path.</p></Note>
       </section>
+      <ExampleRepositories topic="inference" />
       <NextLinks items={[
         { href: "/docs/transforms", label: "Manipulate detections", detail: "Coordinates, anchors, crops, and containment" },
         { href: "/docs/export", label: "Export the model", detail: "Tensor contract, metadata, and backend support" },

@@ -1,5 +1,6 @@
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { ExampleRepositories } from "../../ui/ExampleRepositories";
 import { launcherCode, resumeCode, trainCode } from "../../data";
 import { pageMetadata } from "../../seo";
 
@@ -54,6 +55,7 @@ export default function TrainingPage() {
         <p><code>val_conf=0.0</code> retains finite detections so COCO’s score-ranked <code>maxDets</code> determines AP. Deployment-point precision and recall use separate <code>operating_conf</code> and <code>operating_iou</code> settings.</p>
         <Note title="No AP by smoke test"><p>Only a released checkpoint, declared split, exact protocol, and reproducible command support a public accuracy claim.</p></Note>
       </section>
+      <ExampleRepositories topic="training" />
       <NextLinks items={[
         { href: "/docs/checkpoints", label: "Checkpoint modes", detail: "Full resume state, slim inference files, and identity" },
         { href: "/docs/validation", label: "Validate the run", detail: "COCO ranking, operating points, and release evidence" },

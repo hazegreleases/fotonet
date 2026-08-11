@@ -6,11 +6,19 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const output = join(root, "pages-dist");
 const basePath = (process.env.PAGES_BASE_PATH ?? "/fotonet").replace(/\/$/, "");
 const origin = "https://hazegreleases.github.io";
+const repositoryTopics = [
+  "inference", "data", "training", "validation", "export",
+  "examples", "models", "checkpoints", "api", "transforms",
+];
+const projectRoutes = repositoryTopics.flatMap((topic) =>
+  [1, 2, 3].map((tier) => `/code/${topic}/tier-${tier}`),
+);
 const routes = [
   "/", "/benchmarks", "/docs", "/docs/api", "/docs/checkpoints",
   "/docs/cli", "/docs/data", "/docs/examples", "/docs/export",
   "/docs/inference", "/docs/install", "/docs/models", "/docs/training",
   "/docs/transforms", "/docs/validation",
+  ...projectRoutes,
 ];
 
 await rm(output, { recursive: true, force: true });
@@ -30,7 +38,7 @@ const render = typeof worker === "function"
 function makeStatic(html) {
   const structuredData = [];
   const withStructuredDataPlaceholders = html.replace(
-    /<script\b[^>]*type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi,
+    /<script\b(?=[^>]*(?:type="application\/ld\+json"|data-project-files))[^>]*>[\s\S]*?<\/script>/gi,
     (script) => {
       const index = structuredData.push(script) - 1;
       return `__FOTONET_JSON_LD_${index}__`;

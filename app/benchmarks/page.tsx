@@ -48,7 +48,7 @@ export default function BenchmarksPage() {
       <header className="benchmark-header">
         <AmbientShapes variant="technical" />
         <p className="eyebrow">Measurement record / 2026-08-10</p>
-        <h1>Deployment cost, with the footnotes left on.</h1>
+        <h1>Deployment cost at 640 × 640.</h1>
         <p>All ten stable graphs were measured without training or dataset access. These numbers describe raw native inference, not accuracy or application throughput.</p>
       </header>
       <section className="benchmark-spec">
@@ -70,7 +70,7 @@ export default function BenchmarksPage() {
       <section className="pair-comparison-section">
         <div className="benchmark-section-heading">
           <p className="eyebrow">The useful comparison</p>
-          <h2>What changes when P2 is added?</h2>
+          <h2>Standard models compared with P2 variants.</h2>
           <p>These deltas compare each capacity profile with its own P2 sibling. Negative throughput is a cost, not a quality verdict.</p>
         </div>
         <div className="table-wrap comparison-table">
@@ -100,7 +100,7 @@ export default function BenchmarksPage() {
       <section className="benchmark-table-section">
         <div className="benchmark-section-heading">
           <p className="eyebrow">Complete measurement record</p>
-          <h2>Two readable tables instead of one eleven-column wall.</h2>
+          <h2>Standard and P2 model benchmarks.</h2>
           <p>Each cell keeps paired quantities together: full/deploy parameters, MACs/FLOPs, median latency/FPS, and batch-1/batch-8 memory.</p>
         </div>
         <MeasurementTable p2={false} />
@@ -111,12 +111,6 @@ export default function BenchmarksPage() {
         <div><span>02</span><h2>FPS convention</h2><p>FPS is batch size divided by arithmetic mean latency. The displayed B1 latency is p50, so it is not the reciprocal used for FPS. Windows scheduling noise is visible in p95 tails.</p></div>
         <div><span>03</span><h2>What THOP leaves out</h2><p>MAC totals cover the complete fused graph but do not charge unsupported elementwise, concatenation, indexing, or grid-construction operations.</p></div>
         <div><span>04</span><h2>What remains unknown</h2><p>No number here establishes COCO AP, robustness, small-object recall, or parity with an older graph. Those require trained checkpoints and controlled evaluation.</p></div>
-      </section>
-      <section className="p2-analysis">
-        <AmbientShapes variant="organic" />
-        <p className="eyebrow">Read the activation cost</p>
-        <h2>P2 adds relatively few parameters—and a great deal more traffic.</h2>
-        <p>At 640×640 the extra stride-4 level increases raw output candidates from 8,400 to 34,000. On this runtime, Nano’s batch-8 throughput falls from 723 to 282 images/s while peak allocated memory rises from 218 to 730 MiB. That trade can still be worthwhile for small objects, but only validation can decide.</p>
       </section>
     </main>
   );

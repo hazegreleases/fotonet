@@ -1,5 +1,6 @@
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { ExampleRepositories } from "../../ui/ExampleRepositories";
 import { pageMetadata } from "../../seo";
 
 export const metadata = pageMetadata({
@@ -39,6 +40,7 @@ export default function ExportPage() {
         <CodeBlock code={`artifact = model.export(\n    format="onnx",\n    path="exports/fotonet_int8.onnx",\n    imgsz=640,\n    int8=True,\n    calibration_data=calibration_batches,\n)`} label="Python" />
         <Note title="Calibration is part of the build input" tone="warning"><p>Supply representative RGB NCHW batches in <code>[0,1]</code>. Treat calibration data, artifacts, metadata, and export toolchains as trusted inputs.</p></Note>
       </section>
+      <ExampleRepositories topic="export" />
       <NextLinks items={[
         { href: "/docs/inference", label: "Load an exported artifact", detail: "Static shape and Results behavior" },
         { href: "/benchmarks", label: "Understand published speed", detail: "Current numbers are native eager FP32" },

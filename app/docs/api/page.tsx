@@ -1,5 +1,6 @@
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { ExampleRepositories } from "../../ui/ExampleRepositories";
 import { pageMetadata } from "../../seo";
 
 export const metadata = pageMetadata({
@@ -68,6 +69,7 @@ export default function ApiPage() {
           <div><dt><code>DetectionBox.transform</code></dt><dd>Mutable application-region helper for crop and geometry operations.</dd></div>
         </dl>
       </section>
+      <ExampleRepositories topic="api" />
       <NextLinks items={[
         { href: "/docs/inference", label: "Inference guide", detail: "Inputs, batching, video, and practical prediction controls" },
         { href: "/docs/transforms", label: "Spatial API", detail: "Crops, anchors, movement, expansion, and containment" },

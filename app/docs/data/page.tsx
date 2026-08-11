@@ -1,5 +1,6 @@
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { ExampleRepositories } from "../../ui/ExampleRepositories";
 import { pageMetadata } from "../../seo";
 
 export const metadata = pageMetadata({
@@ -53,6 +54,7 @@ names:
         </dl>
         <p>Public validation requires an explicit <code>val</code> source. It never substitutes training data when validation data is absent.</p>
       </section>
+      <ExampleRepositories topic="data" />
       <NextLinks items={[
         { href: "/docs/training", label: "Start training", detail: "Dry-run the graph, data, and run identity first" },
         { href: "/docs/validation", label: "Validate the dataset", detail: "COCO ranking and annotation-policy reporting" },

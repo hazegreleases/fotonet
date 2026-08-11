@@ -1,0 +1,19 @@
+[project]
+name = "fotonet-ops-reference"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+  "fotonet>=0.8.0b2",
+  "pyyaml>=6",
+  "tomli>=2; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+fotonet-ops = "fotonet_ops.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"

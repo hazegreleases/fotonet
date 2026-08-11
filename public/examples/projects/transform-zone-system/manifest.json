@@ -1,0 +1,49 @@
+{
+  "project": "transform-zone-system",
+  "files": [
+    {
+      "path": "pyproject.toml",
+      "lines": 15
+    },
+    {
+      "path": "README.md",
+      "lines": 21
+    },
+    {
+      "path": "config/zones.toml",
+      "lines": 18
+    },
+    {
+      "path": "zone_system/__init__.py",
+      "lines": 91
+    },
+    {
+      "path": "zone_system/config.py",
+      "lines": 92
+    },
+    {
+      "path": "zone_system/geometry.py",
+      "lines": 93
+    },
+    {
+      "path": "zone_system/event_engine.py",
+      "lines": 97
+    },
+    {
+      "path": "zone_system/event_loop.py",
+      "lines": 100
+    },
+    {
+      "path": "zone_system/sink.py",
+      "lines": 97
+    },
+    {
+      "path": "zone_system/main.py",
+      "lines": 96
+    },
+    {
+      "path": "tests/test_transform_system.py",
+      "lines": 93
+    }
+  ]
+}

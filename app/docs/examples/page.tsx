@@ -1,5 +1,6 @@
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { ExampleRepositories } from "../../ui/ExampleRepositories";
 import { pageMetadata } from "../../seo";
 
 export const metadata = pageMetadata({
@@ -194,6 +195,7 @@ export default function ExamplesPage() {
         <CodeBlock code={`python track_zone_events.py weights/fotonet.pt entrance.mp4 --zone 180 240 940 700 --anchor bottom --class-name person --output outputs/zone-events.jsonl`} language="bash" label="Run it" />
         <Note title="Know the tracker boundary"><p>The built-in tracker is greedy, same-class IoU association. Events describe visible rectangle tracks; they do not claim motion prediction, re-identification after long occlusion, or exact segmentation boundaries.</p></Note>
       </section>
+      <ExampleRepositories topic="examples" />
       <NextLinks items={[
         { href: "/docs/transforms", label: "Understand spatial transforms", detail: "Anchors, focus, containment, ordering, and relationships" },
         { href: "/docs/validation", label: "Validate a checkpoint", detail: "Ordinary validation and canonical release evidence" },

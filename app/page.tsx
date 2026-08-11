@@ -10,7 +10,7 @@ export default function Home() {
         <AmbientShapes variant="hero" />
         <div className="hero-copy">
           <p className="eyebrow">Production V1 / one graph contract</p>
-          <h1>Small detector.<br /><em>Explicit contracts.</em></h1>
+          <h1>fotonet<br /><em>&quot;yet another alternative&quot;</em></h1>
           <p className="hero-lead">
             FOTO-NET is a compact, NMS-free object detector with a Python API,
             multi-scale model family, resumable training, and deployment exports.
@@ -46,7 +46,7 @@ export default function Home() {
         <div className="section-index">01 / USE</div>
         <div className="section-heading">
           <p className="eyebrow">Inference starts from a checkpoint</p>
-          <h2>A predictable result object, not a mystery tuple.</h2>
+          <h2>And here is how to run inference.</h2>
           <p>
             Image prediction returns one <code>Results</code> object per input.
             Each result owns its source image, boxes, scores, class mapping, plotting,
@@ -62,7 +62,7 @@ export default function Home() {
         <div className="section-index">02 / GRAPH</div>
         <div className="architecture-copy">
           <p className="eyebrow">One explicit foundation</p>
-          <h2>The graph is assembled in Python and identified in checkpoints.</h2>
+          <h2>Production graph overview.</h2>
           <p>
             Stable N/S/M/L/X names resolve to reviewed integer channel and depth settings.
             P2 variants extend the neck and head for small objects without changing the backbone.
@@ -81,7 +81,7 @@ export default function Home() {
         <div className="metrics-intro">
           <div>
             <p className="eyebrow">No accuracy implied</p>
-            <h2>Performance numbers with the test conditions attached.</h2>
+            <h2>Measured inference performance at 640 × 640.</h2>
           </div>
           <p>
             These are raw fused FP32 forwards at 640×640 on one RTX 4060.
@@ -108,7 +108,7 @@ export default function Home() {
         <div className="section-index">04 / MANUAL</div>
         <div className="manual-intro">
           <p className="eyebrow">Documentation by task</p>
-          <h2>Read what you need. Keep the contracts nearby.</h2>
+          <h2>Documentation by task.</h2>
         </div>
         <div className="manual-grid">
           <Link href="/docs/install"><span>Start</span><h3>Install and run a trusted checkpoint</h3><p>Requirements, installation, first inference, and the current release boundary.</p></Link>
@@ -125,7 +125,7 @@ export default function Home() {
       <section className="honesty ruled-section">
         <AmbientShapes variant="organic" />
         <p className="eyebrow">What this project does not claim</p>
-        <h2>Compact is measured. Accurate is still an open question.</h2>
+        <h2>Current measurement and evaluation status.</h2>
         <div>
           <p>
             Parameter count, MACs, and latency describe the implementation. They do not
