@@ -1,7 +1,9 @@
 # fotonet
 
-fotonet is a compact, NMS-free object detector with a Python API, a uniform
-training protocol, COCO-style validation, and ONNX/TorchScript export.
+fotonet is an open-source, compact NMS-free object detector for computer vision
+and machine learning workflows. It is built with PyTorch and provides a Python
+API, resumable training, COCO-style validation, small-object P2 variants, and
+ONNX or TorchScript export.
 
 The repository is being published while the first official Nano checkpoint is
 still training. Model names currently construct untrained architectures. The
