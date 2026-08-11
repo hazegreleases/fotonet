@@ -19,7 +19,8 @@ for (const route of routes) {
   assert.doesNotMatch(html, /chatgpt\.site|dev-tools\//i, route || "/");
   assert.doesNotMatch(html, /from fotonet import FOTONET/, route || "/");
   assert.doesNotMatch(html, /theme-switch|data-theme|fotonet-theme|blueprint/i, route || "/");
-  assert.doesNotMatch(html, /<script(?![^>]*(?:static-runtime\.js|application\/ld\+json))/i, route || "/");
+  assert.doesNotMatch(html, /<script(?![^>]*(?:static-runtime\.js|application\/ld\+json|fotonet-color-mode))/i, route || "/");
+  assert.match(html, /<script id="fotonet-color-mode">/, route || "/");
   assert.doesNotMatch(html, /(?:href|src)="\/(?!fotonet\/)/i, route || "/");
   assert.match(html, /\/fotonet\/static-runtime\.js/, route || "/");
   assert.match(html, /<meta name="description" content="[^"]{80,}/i, route || "/");
@@ -47,9 +48,19 @@ assert.match(home, /href="\/fotonet\/favicon\.svg"/);
 assert.match(home, /<meta name="viewport" content="width=device-width, initial-scale=1"/);
 assert.match(home, /class="mobile-nav"/);
 assert.equal((home.match(/name="theme-color"/g) ?? []).length, 2);
+const colorModeScript = home.match(/<script id="fotonet-color-mode">([\s\S]*?)<\/script>/)?.[1];
+assert.ok(colorModeScript, "missing pre-paint system color-mode script");
+assert.ok(home.indexOf("fotonet-color-mode") < home.indexOf("</head>"), "color-mode script must run before body paint");
+for (const dark of [false, true]) {
+  const document = { documentElement: { dataset: {} } };
+  const window = { matchMedia: () => ({ matches: dark }) };
+  Function("window", "document", colorModeScript)(window, document);
+  assert.equal(document.documentElement.dataset.colorMode, dark ? "dark" : "light");
+}
 const cssHref = home.match(/href="\/fotonet\/(?<path>_next\/static\/css\/[^"]+\.css)"/)?.groups?.path;
 assert.ok(cssHref, "missing compiled stylesheet");
 const css = await readFile(join(output, cssHref), "utf8");
+assert.match(css, /data-color-mode=dark/);
 assert.match(css, /prefers-color-scheme:\s*dark/);
 assert.doesNotMatch(css, /data-theme|theme-switch|blueprint/i);
 const documentation = await readFile(join(output, "docs", "index.html"), "utf8");

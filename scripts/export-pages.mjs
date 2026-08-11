@@ -36,7 +36,15 @@ function makeStatic(html) {
       return `__FOTONET_JSON_LD_${index}__`;
     },
   );
-  const withoutRuntime = withStructuredDataPlaceholders
+  const criticalScripts = [];
+  const withCriticalScriptPlaceholders = withStructuredDataPlaceholders.replace(
+    /<script\b(?=[^>]*id="fotonet-color-mode")[^>]*>[\s\S]*?<\/script>/gi,
+    (script) => {
+      const index = criticalScripts.push(script) - 1;
+      return `__FOTONET_CRITICAL_SCRIPT_${index}__`;
+    },
+  );
+  const withoutRuntime = withCriticalScriptPlaceholders
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<link\b[^>]*rel="modulepreload"[^>]*>/gi, "")
     .replace(/\sdata-rsc-css-href="[^"]*"/gi, "");
@@ -48,9 +56,13 @@ function makeStatic(html) {
     "</body>",
     `<script defer src="${basePath}/static-runtime.js"></script></body>`,
   );
-  return structuredData.reduce(
+  const withStructuredData = structuredData.reduce(
     (result, script, index) => result.replace(`__FOTONET_JSON_LD_${index}__`, script),
     withRuntime,
+  );
+  return criticalScripts.reduce(
+    (result, script, index) => result.replace(`__FOTONET_CRITICAL_SCRIPT_${index}__`, script),
+    withStructuredData,
   );
 }
 

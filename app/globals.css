@@ -28,6 +28,32 @@
   --radius-lg: 28px;
 }
 
+:root[data-color-mode="dark"] {
+  color-scheme: dark;
+  --bg: #09110c;
+  --paper: #0f1b14;
+  --paper-strong: #15251a;
+  --ink: #f1ead8;
+  --muted: #b3bdae;
+  --faint: #89998c;
+  --line: #304638;
+  --line-strong: #6f8775;
+  --accent: #91c78f;
+  --accent-strong: #c0e0b3;
+  --accent-soft: #243a29;
+  --signal: #e29764;
+  --info: #74b9b2;
+  --gold: #d8b46e;
+  --berry: #d18e9f;
+  --mist: #192c20;
+  --code-bg: #060b08;
+  --code-ink: #eee7d7;
+  --selection: #31583b;
+  --shadow: rgba(0, 0, 0, 0.38);
+  --shadow-deep: rgba(0, 0, 0, 0.58);
+}
+
+/* CSS-only fallback; the pre-paint system probe pins the same palette on navigation. */
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
@@ -68,7 +94,6 @@ body {
   font-size: 16px;
   line-height: 1.6;
   text-rendering: optimizeLegibility;
-  transition: background-color 180ms ease, color 180ms ease;
 }
 
 img, video, canvas { max-width: 100%; height: auto; }

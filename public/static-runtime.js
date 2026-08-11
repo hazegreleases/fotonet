@@ -1,4 +1,15 @@
 (() => {
+  const systemColorMode = window.matchMedia("(prefers-color-scheme: dark)");
+  const syncColorMode = () => {
+    document.documentElement.dataset.colorMode = systemColorMode.matches ? "dark" : "light";
+  };
+  syncColorMode();
+  if (typeof systemColorMode.addEventListener === "function") {
+    systemColorMode.addEventListener("change", syncColorMode);
+  } else if (typeof systemColorMode.addListener === "function") {
+    systemColorMode.addListener(syncColorMode);
+  }
+
   document.querySelectorAll(".code-block").forEach((block) => {
     const button = block.querySelector("figcaption button");
     const lines = [...block.querySelectorAll(".line-source")];

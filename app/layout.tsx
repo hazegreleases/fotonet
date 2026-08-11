@@ -62,10 +62,13 @@ export const viewport: Viewport = {
   ],
 };
 
+const systemColorModeScript = `(() => { try { const dark = window.matchMedia('(prefers-color-scheme: dark)').matches; document.documentElement.dataset.colorMode = dark ? 'dark' : 'light'; } catch (_) { document.documentElement.dataset.colorMode = 'light'; } })();`;
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script id="fotonet-color-mode" dangerouslySetInnerHTML={{ __html: systemColorModeScript }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(projectStructuredData) }} />
       </head>
       <body>
