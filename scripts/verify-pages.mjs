@@ -38,7 +38,18 @@ for (const route of routes) {
 
 const examples = await readFile(join(output, "docs", "examples", "index.html"), "utf8");
 assert.match(examples, /\/fotonet\/examples\/train\.py/);
-await access(join(output, "examples", "train.py"));
+for (const script of [
+  "train.py", "predict_image.py", "predict_folder.py", "export_onnx.py",
+  "validate_checkpoint.py", "transform_region.py", "extract_detection_crops.py",
+  "anchor_zone_filter.py", "track_zone_events.py",
+]) {
+  assert.match(examples, new RegExp(`/fotonet/examples/${script.replace(".", "\\.")}`));
+  await access(join(output, "examples", script));
+}
+const transforms = await readFile(join(output, "docs", "transforms", "index.html"), "utf8");
+assert.match(transforms, /AnchorPoint\.BOTTOM/);
+assert.match(transforms, /pixel_contains/);
+assert.match(transforms, /focus_reset/);
 await access(join(output, ".nojekyll"));
 await access(join(output, "404.html"));
 const home = await readFile(join(output, "index.html"), "utf8");
