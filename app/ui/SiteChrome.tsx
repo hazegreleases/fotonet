@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { primaryNav } from "../data";
-import { ThemeSwitch } from "./ThemeSwitch";
 
 export function SiteHeader() {
   return (
@@ -19,7 +18,6 @@ export function SiteHeader() {
             <Link key={item.href} href={item.href}>{item.label}</Link>
           ))}
         </nav>
-        <ThemeSwitch />
         <details className="mobile-nav">
           <summary>
             <span>Menu</span>

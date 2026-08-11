@@ -4,8 +4,8 @@
   "description": "Documentation for the fotonet compact NMS-free PyTorch object detector.",
   "start_url": "/fotonet/",
   "display": "minimal-ui",
-  "background_color": "#f5eddc",
-  "theme_color": "#173f2a",
+  "background_color": "#e9e0cd",
+  "theme_color": "#19472f",
   "icons": [
     {
       "src": "/fotonet/favicon.svg",

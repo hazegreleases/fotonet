@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { projectStructuredData, SITE_URL } from "./seo";
 import { SiteFooter, SiteHeader } from "./ui/SiteChrome";
@@ -54,13 +54,18 @@ export const metadata: Metadata = {
   },
 };
 
-const themeScript = `(() => { try { const value = localStorage.getItem('fotonet-theme'); document.documentElement.dataset.theme = ['field','night','blueprint'].includes(value) ? value : 'field'; } catch (_) { document.documentElement.dataset.theme = 'field'; } })();`;
+export const viewport: Viewport = {
+  colorScheme: "light dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#e9e0cd" },
+    { media: "(prefers-color-scheme: dark)", color: "#09110c" },
+  ],
+};
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" data-theme="field" suppressHydrationWarning>
+    <html lang="en">
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(projectStructuredData) }} />
       </head>
       <body>
