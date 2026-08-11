@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="fotonet">
+  <rect width="64" height="64" rx="16" fill="#173f2a"/>
+  <path d="M18 15h31v9H29v8h17v9H29v16H18z" fill="#f5eddc"/>
+  <circle cx="48" cy="51" r="5" fill="#e6a15a"/>
+</svg>

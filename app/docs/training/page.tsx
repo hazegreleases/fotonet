@@ -1,9 +1,14 @@
-import type { Metadata } from "next";
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
 import { launcherCode, resumeCode, trainCode } from "../../data";
+import { pageMetadata } from "../../seo";
 
-export const metadata: Metadata = { title: "Training and resume" };
+export const metadata = pageMetadata({
+  title: "Train and Resume a PyTorch Object Detector",
+  description: "Train fotonet on a custom object detection dataset, configure optimization and validation, save complete checkpoints, and resume interrupted PyTorch runs.",
+  path: "/docs/training",
+  keywords: ["train object detector", "resume PyTorch training", "custom object detection", "detection checkpoint"],
+});
 
 export default function TrainingPage() {
   return (

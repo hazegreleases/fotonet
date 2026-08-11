@@ -1,8 +1,13 @@
-import type { Metadata } from "next";
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { pageMetadata } from "../../seo";
 
-export const metadata: Metadata = { title: "Python API" };
+export const metadata = pageMetadata({
+  title: "Python Object Detection API Reference",
+  description: "Reference the fotonet Python API for detector construction, prediction, tracking, training, validation, export, Results objects, and detection transforms.",
+  path: "/docs/api",
+  keywords: ["object detection API", "Python API reference", "PyTorch detector API", "computer vision library"],
+});
 
 const methods = [
   ["Fotonet(model_path=None, nc=None, task='detect', device=None)", "Construct a canonical graph or load a supported native/exported artifact."],

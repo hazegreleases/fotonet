@@ -28,7 +28,15 @@ const render = typeof worker === "function"
     );
 
 function makeStatic(html) {
-  const withoutRuntime = html
+  const structuredData = [];
+  const withStructuredDataPlaceholders = html.replace(
+    /<script\b[^>]*type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi,
+    (script) => {
+      const index = structuredData.push(script) - 1;
+      return `__FOTONET_JSON_LD_${index}__`;
+    },
+  );
+  const withoutRuntime = withStructuredDataPlaceholders
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<link\b[^>]*rel="modulepreload"[^>]*>/gi, "")
     .replace(/\sdata-rsc-css-href="[^"]*"/gi, "");
@@ -36,9 +44,13 @@ function makeStatic(html) {
     /\b(href|src)="\/(?!\/)/g,
     (_match, attribute) => `${attribute}="${basePath}/`,
   );
-  return based.replace(
+  const withRuntime = based.replace(
     "</body>",
     `<script defer src="${basePath}/static-runtime.js"></script></body>`,
+  );
+  return structuredData.reduce(
+    (result, script, index) => result.replace(`__FOTONET_JSON_LD_${index}__`, script),
+    withRuntime,
   );
 }
 
@@ -55,6 +67,17 @@ for (const route of routes) {
 }
 
 await writeFile(join(output, ".nojekyll"), "", "utf8");
+const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${routes.map((route) => `  <url><loc>${origin}${basePath}${route === "/" ? "/" : `${route}/`}</loc></url>`).join("\n")}
+</urlset>
+`;
+await writeFile(join(output, "sitemap.xml"), sitemap, "utf8");
+await writeFile(
+  join(output, "robots.txt"),
+  `User-agent: *\nAllow: ${basePath}/\nSitemap: ${origin}${basePath}/sitemap.xml\n`,
+  "utf8",
+);
 const home = await readFile(join(output, "index.html"), "utf8");
 await writeFile(join(output, "404.html"), home, "utf8");
 console.log(`Exported ${routes.length} routes to ${output} with base path ${basePath}`);

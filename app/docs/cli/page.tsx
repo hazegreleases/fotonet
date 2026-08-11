@@ -1,8 +1,13 @@
-import type { Metadata } from "next";
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { pageMetadata } from "../../seo";
 
-export const metadata: Metadata = { title: "Command line" };
+export const metadata = pageMetadata({
+  title: "Object Detection Command-Line Interface",
+  description: "Use the fotonet CLI for training, prediction, tracking, COCO-style validation, and ONNX or TorchScript object detector export.",
+  path: "/docs/cli",
+  keywords: ["object detection CLI", "computer vision command line", "fotonet train"],
+});
 
 export default function CliPage() {
   return (

@@ -1,9 +1,14 @@
-import type { Metadata } from "next";
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
 import { inferenceCode, installCode } from "../../data";
+import { pageMetadata } from "../../seo";
 
-export const metadata: Metadata = { title: "Install and first run" };
+export const metadata = pageMetadata({
+  title: "Install fotonet and Run Object Detection",
+  description: "Install the fotonet Python package with PyTorch, load a trusted checkpoint, and run your first image through the NMS-free object detection API.",
+  path: "/docs/install",
+  keywords: ["install fotonet", "Python object detection", "PyTorch inference"],
+});
 
 export default function InstallPage() {
   return (

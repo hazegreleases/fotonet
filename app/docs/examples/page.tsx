@@ -1,8 +1,13 @@
-import type { Metadata } from "next";
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { pageMetadata } from "../../seo";
 
-export const metadata: Metadata = { title: "Runnable examples" };
+export const metadata = pageMetadata({
+  title: "Runnable Python Object Detection Examples",
+  description: "Download complete fotonet scripts for image and folder inference, custom object detector training and resume, checkpoint validation, and ONNX export.",
+  path: "/docs/examples",
+  keywords: ["object detection Python example", "train.py", "ONNX export example", "computer vision scripts"],
+});
 
 const imageScript = `from argparse import ArgumentParser
 from pathlib import Path

@@ -1,8 +1,13 @@
-import type { Metadata } from "next";
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { pageMetadata } from "../../seo";
 
-export const metadata: Metadata = { title: "Validation" };
+export const metadata = pageMetadata({
+  title: "COCO Object Detection Validation",
+  description: "Evaluate fotonet checkpoints with COCO-style AP metrics, explicit validation datasets, score-ranked predictions, and separately declared operating points.",
+  path: "/docs/validation",
+  keywords: ["COCO evaluation", "object detection metrics", "mAP", "AP50", "model validation"],
+});
 
 export default function ValidationPage() {
   return (

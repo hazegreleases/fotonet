@@ -1,8 +1,13 @@
-import type { Metadata } from "next";
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { pageMetadata } from "../../seo";
 
-export const metadata: Metadata = { title: "Checkpoint contracts" };
+export const metadata = pageMetadata({
+  title: "PyTorch Object Detection Checkpoints",
+  description: "Understand fotonet full training checkpoints, slim inference weights, safe tensor-only loading, graph identities, class schemas, and resume compatibility.",
+  path: "/docs/checkpoints",
+  keywords: ["PyTorch checkpoint", "object detection weights", "resume training", "safe model loading"],
+});
 
 export default function CheckpointsPage() {
   return (

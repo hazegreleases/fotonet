@@ -1,8 +1,13 @@
-import type { Metadata } from "next";
 import { modelGuidance, modelMetrics } from "../data";
+import { pageMetadata } from "../seo";
 import { AmbientShapes } from "../ui/AmbientShapes";
 
-export const metadata: Metadata = { title: "Measured performance" };
+export const metadata = pageMetadata({
+  title: "Object Detection Model Benchmarks",
+  description: "Measured fotonet parameter counts, MACs, GFLOPs, latency, throughput, and GPU memory for ten compact object detection models at 640 by 640.",
+  path: "/benchmarks",
+  keywords: ["object detection benchmark", "inference latency", "GFLOPs", "model parameters", "RTX 4060"],
+});
 
 function MeasurementTable({ p2 }: { p2: boolean }) {
   const rows = modelMetrics.filter((row) => row.p2 === p2);

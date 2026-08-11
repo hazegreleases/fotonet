@@ -1,8 +1,13 @@
-import type { Metadata } from "next";
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { pageMetadata } from "../../seo";
 
-export const metadata: Metadata = { title: "Export" };
+export const metadata = pageMetadata({
+  title: "Export Object Detection to ONNX and TorchScript",
+  description: "Export fotonet object detection models to ONNX, TorchScript, TensorRT, or CoreML while preserving tensor shapes, class schemas, and runtime metadata.",
+  path: "/docs/export",
+  keywords: ["ONNX object detection", "TorchScript export", "TensorRT detector", "CoreML computer vision"],
+});
 
 export default function ExportPage() {
   return (

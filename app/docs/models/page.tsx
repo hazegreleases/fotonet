@@ -1,9 +1,14 @@
-import type { Metadata } from "next";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
 import { CodeBlock } from "../../ui/CodeBlock";
 import { modelGuidance, modelMetrics } from "../../data";
+import { pageMetadata } from "../../seo";
 
-export const metadata: Metadata = { title: "Models and configuration" };
+export const metadata = pageMetadata({
+  title: "Compact Object Detection Models",
+  description: "Compare fotonet N, S, M, L, and X object detector profiles, small-object P2 variants, feature strides, parameter counts, and graph identity rules.",
+  path: "/docs/models",
+  keywords: ["compact object detector", "small object detection", "P2 detector", "model scaling"],
+});
 
 export default function ModelsPage() {
   return (

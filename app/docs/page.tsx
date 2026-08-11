@@ -1,8 +1,13 @@
-import type { Metadata } from "next";
 import Link from "next/link";
+import { pageMetadata } from "../seo";
 import { DocHeader, Note } from "../ui/Docs";
 
-export const metadata: Metadata = { title: "Documentation" };
+export const metadata = pageMetadata({
+  title: "fotonet Object Detection Documentation",
+  description: "Task-oriented documentation for installing, training, evaluating, exporting, and integrating the fotonet NMS-free PyTorch object detector.",
+  path: "/docs",
+  keywords: ["object detection documentation", "PyTorch detection library", "computer vision API"],
+});
 
 export default function DocsIndex() {
   return (

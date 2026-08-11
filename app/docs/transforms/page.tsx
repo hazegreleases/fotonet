@@ -1,8 +1,13 @@
-import type { Metadata } from "next";
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks } from "../../ui/Docs";
+import { pageMetadata } from "../../seo";
 
-export const metadata: Metadata = { title: "Results and transforms" };
+export const metadata = pageMetadata({
+  title: "Detection Boxes, Results, and Image Transforms",
+  description: "Use fotonet detection Results, normalized and pixel bounding boxes, anchors, crops, expansion, containment, and coordinate-safe image transforms.",
+  path: "/docs/transforms",
+  keywords: ["bounding box API", "image crop", "detection results", "coordinate transforms"],
+});
 
 const methods = [
   ["set_anchor(anchor)", "Choose the fixed point used by scale and expansion operations."],

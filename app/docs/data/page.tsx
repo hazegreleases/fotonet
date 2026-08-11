@@ -1,8 +1,13 @@
-import type { Metadata } from "next";
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { pageMetadata } from "../../seo";
 
-export const metadata: Metadata = { title: "Datasets and labels" };
+export const metadata = pageMetadata({
+  title: "Object Detection Datasets and YOLO Labels",
+  description: "Configure YOLO-format object detection datasets, ordered class schemas, annotation validation, image discovery, and training data policies for fotonet.",
+  path: "/docs/data",
+  keywords: ["YOLO labels", "object detection dataset", "bounding box annotations", "COCO dataset"],
+});
 
 export default function DataPage() {
   return (

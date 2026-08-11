@@ -1,8 +1,13 @@
-import type { Metadata } from "next";
 import { CodeBlock } from "../../ui/CodeBlock";
 import { DocHeader, NextLinks, Note } from "../../ui/Docs";
+import { pageMetadata } from "../../seo";
 
-export const metadata: Metadata = { title: "Inference" };
+export const metadata = pageMetadata({
+  title: "Python Object Detection Inference",
+  description: "Run NMS-free object detection on images, folders, tensors, video, or webcams and work with typed fotonet Results and detection boxes in Python.",
+  path: "/docs/inference",
+  keywords: ["object detection inference", "Python computer vision", "image detection", "video detection"],
+});
 
 export default function InferencePage() {
   return (
