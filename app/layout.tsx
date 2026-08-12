@@ -44,7 +44,7 @@ export const metadata: Metadata = {
     siteName: "fotonet",
     locale: "en_US",
     type: "website",
-    images: [{ url: `${SITE_URL}/og.png`, width: 1739, height: 909, alt: "fotonet compact object detection documentation" }],
+    images: [{ url: `${SITE_URL}/og.png`, width: 1200, height: 630, alt: "fotonet — compact object detection, measured and documented" }],
   },
   twitter: {
     card: "summary_large_image",

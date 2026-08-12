@@ -40,7 +40,7 @@ export function pageMetadata({ title, description, path, keywords = [] }: PageMe
       siteName: "fotonet",
       locale: "en_US",
       type: "website",
-      images: [{ url: image, width: 1739, height: 909, alt: "fotonet compact object detection documentation" }],
+      images: [{ url: image, width: 1200, height: 630, alt: "fotonet — compact object detection, measured and documented" }],
     },
     twitter: {
       card: "summary_large_image",

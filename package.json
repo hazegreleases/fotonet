@@ -7,6 +7,7 @@
   },
   "scripts": {
     "generate:projects": "python scripts/generate_repository_projects.py",
+    "generate:og": "node scripts/render-og.mjs",
     "dev": "npm run generate:projects && vinext dev",
     "build": "npm run generate:projects && vinext build",
     "start": "vinext start",
