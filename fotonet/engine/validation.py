@@ -5,12 +5,14 @@ using a different data/metric protocol than epoch validation.
 """
 from __future__ import annotations
 
+import sys
 import time
 
 import numpy as np
 import torch
 
 from fotonet.data.augmentations.image import undo_letterbox_boxes_xywhn
+from fotonet.engine.sampling import score_image_sufficiency
 from fotonet.metrics.map import CocoMapEvaluator
 from fotonet.metrics.ranking import score_iou_diagnostics
 
@@ -88,41 +90,54 @@ def _prediction_tensor(outputs, nc):
     return outputs
 
 
-def _stage_prediction_rows(output, nc, conf):
+def _stage_prediction_rows(output, nc, conf, max_det=300):
     """Transfer one image's metric inputs without a CUDA scalar read.
 
     Validation ultimately evaluates predictions on the host.  Checking
     ``torch.isfinite(outputs).all()`` in a Python conditional before that
     transfer forces an extra device synchronization for every batch.  Instead
-    we carry a per-row finiteness sentinel alongside the metric values.  Any
-    invalid row is deliberately retained even if its score is below ``conf``;
-    the host then rejects it before it can affect AP.  That is equivalent to
-    the former whole-output check while avoiding a separate CUDA-to-host
-    scalar transfer.
+    we replicate one whole-output finiteness flag into the payload and append a
+    sentinel row, so an empty selection still reports it.  The host rejects an
+    invalid output before it can affect AP, at the cost of no extra transfer.
+
+    Selection mirrors :meth:`Fotonet._postprocess_single` exactly: an argmax
+    over classes would submit at most one detection per anchor, so AP would be
+    measured under a stricter decode than the one deployment actually uses.
 
     Class indices stay in their native integer dtype rather than being packed
     into the floating payload, so arbitrarily large valid class IDs cannot
     lose precision on half-precision validation models.
     """
-    scores_t, classes_t = output[:, :nc].sigmoid().max(1)
+    probs = output[:, :nc].sigmoid()
     boxes_t = output[:, nc : nc + 4]
+    num_anchors = probs.shape[0]
+    topk = min(int(max_det), num_anchors)
 
-    # ``all(dim=1)`` stays on the model device.  Do not turn it into a Python
-    # bool here: the selected rows below are already transferred for metrics.
-    finite_rows_t = torch.isfinite(output).all(dim=1)
-    keep = (scores_t >= conf) | ~finite_rows_t
+    _, anchor_idx = probs.amax(-1).topk(topk)
+    scores_t, pair_idx = probs[anchor_idx].flatten().topk(topk)
+    rows = anchor_idx[pair_idx.div(nc, rounding_mode="floor")]
+    classes_t = pair_idx.remainder(nc)
 
-    # Pack boxes, score, and the finite sentinel into one D2H transfer.  The
-    # class IDs use a second, integer-preserving transfer only after the
-    # floating payload has proved valid.
+    keep = scores_t >= conf
+
+    # ``all()`` stays on the model device. Do not turn it into a Python bool
+    # here: the payload below is transferred for metrics regardless.
+    all_finite_t = torch.isfinite(output).all().to(dtype=boxes_t.dtype)
+
+    selected = torch.cat((boxes_t[rows[keep]], scores_t[keep].unsqueeze(1)), dim=1)
+    # The trailing sentinel row carries the finiteness flag even when the
+    # confidence floor selects nothing at all.
     payload_t = torch.cat(
-        (boxes_t, scores_t.unsqueeze(1), finite_rows_t.to(dtype=boxes_t.dtype).unsqueeze(1)),
-        dim=1,
-    )[keep]
+        (selected, selected.new_zeros((1, selected.shape[1]))), dim=0
+    )
+    payload_t = torch.cat(
+        (payload_t, all_finite_t.expand(payload_t.shape[0], 1)), dim=1
+    )
     payload = _as_numpy(payload_t, np.float64)
     if not np.all(payload[:, 5] == 1.0):
         raise FloatingPointError("Validation model output contains NaN or infinity; metrics would be invalid")
 
+    payload = payload[:-1]
     classes = _as_numpy(classes_t[keep], np.int64)
     return payload[:, :4], payload[:, 4], classes
 
@@ -136,12 +151,14 @@ def evaluate_detection_model(
     *,
     conf=0.0,
     coco_max_dets=100,
+    max_det=300,
     operating_conf=0.25,
     operating_iou=0.50,
     amp=False,
     class_names=None,
     progress=False,
     progress_interval=100,
+    verbose=None,
 ):
     """Evaluate a detection model under one explicit, reproducible protocol."""
     conf = float(conf)
@@ -158,6 +175,12 @@ def evaluate_detection_model(
     coco_max_dets = int(coco_max_dets)
     if coco_max_dets < 1:
         raise ValueError(f"coco_max_dets must be positive, got {coco_max_dets}")
+    max_det = int(max_det)
+    if max_det < coco_max_dets:
+        raise ValueError(
+            f"max_det={max_det} must be at least coco_max_dets={coco_max_dets}; a smaller decode "
+            "budget would truncate detections before the COCO protocol can rank them."
+        )
     progress_interval = max(int(progress_interval), 1)
     device = torch.device(device)
     source_dataset = _root_dataset(loader.dataset)
@@ -182,10 +205,7 @@ def evaluate_detection_model(
     next_progress = progress_interval
     inference_started = time.monotonic()
     if progress:
-        print(
-            f"[validate] inference started: 0/{total_images} images",
-            flush=True,
-        )
+        print(f"[validate] inference started: 0/{total_images} images", flush=True)
     try:
         for imgs, targets in loader:
             imgs = imgs.to(device, dtype=model_dtype, non_blocking=device.type == "cuda")
@@ -202,7 +222,7 @@ def evaluate_detection_model(
 
             for batch_index, target in enumerate(targets):
                 output = outputs[batch_index]
-                boxes, scores, classes = _stage_prediction_rows(output, nc, conf)
+                boxes, scores, classes = _stage_prediction_rows(output, nc, conf, max_det)
 
                 orig_shape = _target_value(target, "orig_shape", np.asarray(imgs.shape[-2:], dtype=np.int64)).astype(np.int64)
                 boxes = undo_letterbox_boxes_xywhn(boxes, orig_shape, tuple(int(x) for x in imgs.shape[-2:]))
@@ -246,13 +266,12 @@ def evaluate_detection_model(
             "AP is undefined for an all-negative validation split; configure an evaluable validation dataset."
         )
 
-    if progress:
+    if progress and not sys.stdout.isatty():
         print("[validate] inference complete; preparing COCOeval...", flush=True)
     if getattr(source_dataset, "is_coco", False):
         if hasattr(source_dataset, "get_coco_evaluator"):
             evaluator = source_dataset.get_coco_evaluator(
                 image_ids,
-                max_dets=coco_max_dets,
                 operating_conf=operating_conf,
                 operating_iou=operating_iou,
             )
@@ -281,14 +300,13 @@ def evaluate_detection_model(
             operating_conf=operating_conf,
             operating_iou=operating_iou,
         )
-    if progress:
+    eval_verbose = verbose if verbose is not None else (progress and not sys.stdout.isatty())
+    if progress and not sys.stdout.isatty():
         print("[validate] running official pycocotools COCOeval...", flush=True)
-    metrics = evaluator.evaluate(preds_b, preds_s, preds_c, verbose=progress)
+    metrics = evaluator.evaluate(preds_b, preds_s, preds_c, verbose=eval_verbose)
     # Dense-scene operating-point metrics are intentionally computed from the
     # already staged predictions, so they add no model inference or COCOeval
     # pass. Ten evaluable instances is a transparent, fixed scene definition.
-    from fotonet.engine.sampling import score_image_sufficiency
-
     dense_totals = {
         "images": 0,
         "true_positives": 0,

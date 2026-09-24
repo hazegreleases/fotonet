@@ -27,57 +27,38 @@ malformed/duplicate rows. Use `annotation_policy="error"` for a strict audit.
 Public validation requires an independent `val` source and never silently
 uses training data.
 
-## Downloadable launcher
+## CLI launcher
 
-The documented launcher exposes common optimizer, scheduling, data, validation,
-checkpoint, device, and resume settings. It validates forwarded `--set`
-keywords against the installed `Fotonet.train()` signature so misspellings fail
-before a long run.
+The CLI uses `key=value` arguments and validates them before starting a long run.
 
 ```bash
-curl -L https://hazegreleases.github.io/fotonet/examples/train.py -o train.py
-```
-
-```bash
-python train.py \
-  --model fotonetn \
-  --data path/to/data.yaml \
-  --epochs 300 \
-  --imgsz 640 \
-  --batch 16 \
-  --run-dir runs/fotonetn
+python -m fotonet.cli.main train \
+  model=fotonete \
+  data=path/to/data.yaml \
+  epochs=300 \
+  batch=16 \
+  imgsz=640 \
+  run_dir=runs/fotonete \
+  dry_run=true
 ```
 
 Inspect its resolved graph/checkpoint identity and arguments without starting
 training:
 
 ```bash
-python train.py --model fotonetn --data path/to/data.yaml --dry-run
+fotonet train model=fotonete data=path/to/data.yaml dry_run=true
 ```
 
 ## Resume after interruption
 
-Bare `--resume` selects only `<run-dir>/fotonet_last.pt`:
-
 ```bash
-python train.py \
-  --model fotonetn \
-  --data path/to/data.yaml \
-  --epochs 300 \
-  --batch 16 \
-  --run-dir runs/fotonetn \
-  --resume
-```
-
-An explicit checkpoint is also accepted:
-
-```bash
-python train.py \
-  --model fotonetn \
-  --data path/to/data.yaml \
-  --epochs 300 \
-  --run-dir runs/fotonetn \
-  --resume runs/fotonetn/fotonet_last.pt
+fotonet train \
+  model=fotonete \
+  data=path/to/data.yaml \
+  epochs=300 \
+  batch=16 \
+  run_dir=runs/fotonete \
+  resume=runs/fotonete/fotonet_last.pt
 ```
 
 Resume restores model, EMA, optimizer, scheduler, AMP scaler, epoch/global
@@ -89,26 +70,26 @@ protocol, or incomplete checkpoint.
 ```python
 from fotonet import Fotonet
 
-model = Fotonet("fotonetn", nc=2)
+model = Fotonet("fotonete", nc=2)
 summary = model.train(
     data="data.yaml",
     epochs=300,
     imgsz=640,
     batch=16,
-    save_dir="runs/fotonetn",
+    save_dir="runs/fotonete",
 )
 ```
 
 Resume through Python:
 
 ```python
-model = Fotonet("runs/fotonetn/fotonet_last.pt")
+model = Fotonet("runs/fotonete/fotonet_last.pt")
 summary = model.train(
     data="data.yaml",
     epochs=300,
-    weights="runs/fotonetn/fotonet_last.pt",
+    weights="runs/fotonete/fotonet_last.pt",
     resume=True,
-    save_dir="runs/fotonetn",
+    save_dir="runs/fotonete",
 )
 ```
 

@@ -15,6 +15,27 @@ from fotonet.utils.loss import get_loss
 
 class InitializationMixin:
     @staticmethod
+    def _resolve_amp_dtype(amp_dtype, device):
+        """Resolve the autocast dtype, refusing BF16 where hardware lacks it."""
+        name = str(amp_dtype or "float16").lower().replace("-", "").replace("_", "")
+        aliases = {
+            "float16": torch.float16, "fp16": torch.float16, "half": torch.float16,
+            "bfloat16": torch.bfloat16, "bf16": torch.bfloat16,
+        }
+        if name not in aliases:
+            raise ValueError(f"amp_dtype must be 'float16' or 'bfloat16', got {amp_dtype!r}")
+        dtype = aliases[name]
+        if (
+            dtype is torch.bfloat16
+            and device.type == "cuda"
+            and not torch.cuda.is_bf16_supported()
+        ):
+            raise ValueError(
+                "amp_dtype='bfloat16' requires a BF16-capable CUDA device; use 'float16'."
+            )
+        return dtype
+
+    @staticmethod
     def _resolve_training_run_id(resume_ckpt, requested_run_id=None):
         if requested_run_id is not None:
             if not isinstance(requested_run_id, str) or not requested_run_id.strip():
@@ -42,18 +63,25 @@ class InitializationMixin:
         amp_init_scale=65536.0, val_amp=None, cos_lr=True,
         lr_scheduler="Cosine", lr_drop_factor=0.92, lr_drop_patience=5,
         lr_drop_threshold=0.001, lr_drop_min_lr=1e-5, resume_ckpt=None,
+        wsd_decay_shape="linear", wsd_decay_fraction=0.25,
+        wsd_decay_start_epoch=None, wsd_ema_reanchor=True,
+        wsd_ema_decay_start=0.99, wsd_ema_ramp_epochs=20.0,
         compile_model=False, save_period=-1, slim_best=True,
         best_metric="mAP50_95", save_last=True, optimizer="sgd",
         momentum=0.937, weight_decay=0.0005, augment_hyp=None,
         augmentation_passes=None, loss_hyp=None, matcher_hyp=None,
         imgsz_schedule=None, val_subset_size=0, full_val_after=1.0,
         cache_labels=True, disk_cache_images=False, disk_cache_dir=None,
-        coco_max_dets=100, val_conf=0.0, operating_conf=0.25,
+        coco_max_dets=100, val_max_det=300, val_conf=0.0, operating_conf=0.25,
         operating_iou=0.50, annotation_policy="fix",
         allow_missing_labels=False, source_recursive=True,
+        amp_dtype="float16", channels_last=True, cudnn_benchmark=True,
+        grad_clip_norm=10.0, recipe_name=None,
         _training_run_id=None,
     ):
         self.model         = model
+        self.recipe_name   = recipe_name
+        self.resume_info   = None
         self.epochs        = int(epochs)
         if self.epochs < -1:
             raise ValueError("epochs must be a non-negative integer or -1 for an explicit unbounded run")
@@ -122,6 +150,21 @@ class InitializationMixin:
         self.val_amp       = amp if val_amp is None else bool(val_amp)
         self.cos_lr        = cos_lr
         self.lr_scheduler  = self._normalize_lr_scheduler(lr_scheduler)
+        from .schedules import WSD_DECAY_SHAPES
+
+        self.wsd_decay_shape = str(wsd_decay_shape or "linear").strip().lower()
+        if self.wsd_decay_shape not in WSD_DECAY_SHAPES:
+            raise ValueError(f"wsd_decay_shape must be one of {WSD_DECAY_SHAPES}")
+        self.wsd_decay_fraction = float(wsd_decay_fraction)
+        if not 0.05 <= self.wsd_decay_fraction <= 0.9:
+            raise ValueError("wsd_decay_fraction must be in [0.05, 0.9]")
+        self.wsd_decay_start_epoch = (
+            None if wsd_decay_start_epoch is None else int(wsd_decay_start_epoch)
+        )
+        self.wsd_ema_reanchor = bool(wsd_ema_reanchor)
+        self.wsd_ema_decay_start = float(wsd_ema_decay_start)
+        self.wsd_ema_ramp_epochs = float(wsd_ema_ramp_epochs)
+        self._wsd_decay_triggered = False
         self.lr_drop_factor = float(lr_drop_factor)
         self.lr_drop_patience = max(int(lr_drop_patience or 1), 1)
         self.lr_drop_threshold = float(lr_drop_threshold)
@@ -174,6 +217,7 @@ class InitializationMixin:
         self.disk_cache_images = bool(disk_cache_images)
         self.disk_cache_dir = disk_cache_dir
         self.coco_max_dets = int(coco_max_dets)
+        self.val_max_det = max(int(val_max_det), int(coco_max_dets))
         self.val_conf = float(val_conf)
         self.operating_conf = float(operating_conf)
         self.operating_iou = float(operating_iou)
@@ -194,7 +238,7 @@ class InitializationMixin:
         if not 0.0 < self.operating_iou <= 1.0:
             raise ValueError("operating_iou must be in (0, 1]")
         
-        # Compile model — use "default" mode to avoid CUDA graph capture warmup lag
+        # Compile model -- use "default" mode to avoid CUDA graph capture warmup lag
         if self.compile_model and torch.cuda.is_available():
             try:
                 print("[INFO] Compiling model with torch.compile(mode='default')...")
@@ -218,7 +262,27 @@ class InitializationMixin:
         self.val_amp = bool(self.val_amp) and self.device.type == "cuda"
         if requested_amp and self.device.type != "cuda":
             print(f"[INFO] AMP disabled on {self.device.type}; CUDA AMP is unavailable.")
-        
+
+        self.amp_dtype = self._resolve_amp_dtype(amp_dtype, self.device)
+        self.grad_clip_norm = float(grad_clip_norm)
+        if not math.isfinite(self.grad_clip_norm) or self.grad_clip_norm <= 0:
+            raise ValueError("grad_clip_norm must be a finite positive value")
+        # BF16 has FP32's exponent range, so gradient scaling is unnecessary and
+        # its skipped-step machinery only adds risk. FP16 still requires it.
+        self.scale_gradients = self.use_amp and self.amp_dtype is torch.float16
+        self.channels_last = bool(channels_last) and self.device.type == "cuda"
+        if self.channels_last:
+            self.model.to(memory_format=torch.channels_last)
+        if self.device.type == "cuda":
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+        if bool(cudnn_benchmark):
+            # The image-size schedule uses a small fixed set of shapes, so
+            # cuDNN's autotuner amortizes instead of re-benchmarking forever.
+            from fotonet.utils.general import configure_cudnn_benchmark
+
+            configure_cudnn_benchmark(True)
+
         # Get original model (for optimizer, EMA, etc.)
         original_model = self.model._orig_mod if hasattr(self.model, '_orig_mod') else self.model
         
@@ -256,7 +320,7 @@ class InitializationMixin:
 
         self.scaler = torch.amp.GradScaler(
             "cuda" if self.device.type == "cuda" else "cpu",
-            enabled=self.use_amp,
+            enabled=self.scale_gradients,
             init_scale=self.amp_init_scale,
         )
 
@@ -323,10 +387,26 @@ class InitializationMixin:
                     "Cannot safely resume: checkpoint is missing " + ", ".join(missing_state) + ". "
                     "Start a fresh pretrained run instead."
                 )
+            # A BF16 run has no GradScaler, so it checkpoints an empty scaler
+            # state. Resuming that checkpoint under FP16 (or the reverse) is a
+            # legitimate thing to do, but the states are not interchangeable.
+            # Skip the mismatched scaler instead of refusing the whole resume:
+            # loss scaling is a per-step numerical aid, not trajectory state.
+            scaler_state = resume_ckpt["scaler_state"]
+            checkpoint_had_scaler = bool(scaler_state)
+            restore_scaler = checkpoint_had_scaler == self.scaler.is_enabled()
+            if not restore_scaler:
+                previous = "FP16 loss scaling" if checkpoint_had_scaler else "BF16 (no scaler)"
+                current = "FP16 loss scaling" if self.scaler.is_enabled() else "BF16 (no scaler)"
+                print(
+                    f"[WARN] Checkpoint was trained with {previous} but this run uses {current}. "
+                    "Continuing with a fresh scaler; all other training state is restored."
+                )
             try:
                 self.optimizer.load_state_dict(resume_ckpt["optimizer_state"])
                 self._move_optimizer_state_to_device()
-                self.scaler.load_state_dict(resume_ckpt["scaler_state"])
+                if restore_scaler:
+                    self.scaler.load_state_dict(scaler_state)
                 self.ema.ema.load_state_dict(resume_ckpt["ema_state"])
             except Exception as exc:
                 raise ValueError(
@@ -337,16 +417,14 @@ class InitializationMixin:
             self.ema.warmup_steps = max(int(resume_ckpt.get("ema_warmup_steps", self.ema.warmup_steps)), 1)
             self.ema.decay_start = float(resume_ckpt.get("ema_decay_start", self.ema.decay_start))
             self.ema.decay_end = float(resume_ckpt.get("ema_decay_end", self.ema.decay_end))
-            print("[INFO] Restored optimizer, AMP scaler, and EMA state.")
             if resume_ckpt.get("ema_total_steps") is not None:
                 self._resume_ema_total_steps = int(resume_ckpt["ema_total_steps"])
             self.optimizer_step_count = int(resume_ckpt.get("optimizer_step_count", 0))
             self._restore_rng_state(resume_ckpt.get("rng_state"))
 
             if not self._resume_best_checkpoint_matches():
-                print("[WARN] Resume best checkpoint is missing, stale, or incompatible; best score will restart from this run.")
                 self.best_map = float("-inf")
-            print(f"[INFO] Resuming from epoch {self.start_epoch} | best_{self.best_metric}={self.best_map:.4f}")
+            self.resume_info = f"epoch {self.start_epoch} (best {self.best_metric}={self.best_map:.4f})"
             self.global_step = int(resume_ckpt.get("global_step", self.global_step))
             self.images_seen = int(resume_ckpt.get("images_seen", self.images_seen))
             self.labels_seen = int(

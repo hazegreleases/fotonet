@@ -26,7 +26,21 @@ COCO_STANDARD_AREAS = (
 COCOEVAL_CHUNK_DETECTION_LIMIT = 250_000
 
 
+def _silence_pycocotools():
+    try:
+        import pycocotools.coco as p_coco
+        import pycocotools.cocoeval as p_cocoeval
+        p_coco.print = lambda *a, **k: None
+        p_cocoeval.print = lambda *a, **k: None
+    except ImportError:
+        pass
+
+
+_silence_pycocotools()
+
+
 def _require_pycocotools():
+    _silence_pycocotools()
     try:
         from pycocotools.coco import COCO
         from pycocotools.cocoeval import COCOeval

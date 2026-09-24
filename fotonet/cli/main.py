@@ -1,10 +1,10 @@
 """fotonet command line interface.
 
 Examples:
-  fotonet train model=fotonetn data=datasets/coco/coco.yaml epochs=250 batch=16 imgsz=640
-  fotonet predict model=weights/fotonetn.pt source=image.jpg conf=0.25 save=true
-  fotonet val model=weights/fotonetn.pt data=datasets/coco/coco.yaml imgsz=640
-  fotonet export model=weights/fotonetn.pt format=onnx path=fotonet.onnx
+  fotonet train model=fotonete data=datasets/coco/coco.yaml epochs=250 batch=16 imgsz=640
+  fotonet predict model=weights/fotonet_last.pt source=image.jpg conf=0.25 save=true
+  fotonet val model=weights/fotonet_last.pt data=datasets/coco/coco.yaml imgsz=640
+  fotonet export model=weights/fotonet_last.pt format=onnx path=fotonet.onnx
 """
 
 import ast
@@ -89,13 +89,12 @@ def main(argv=None):
     if argv[0] in {"-V", "--version", "version"}:
         print(_version_text())
         return
-
     from fotonet import Fotonet
 
     task, args = parse_args(argv)
     model_name = args.pop("model", None)
     if not model_name:
-        raise SystemExit("Every task requires model=fotonetn or model=path/to/checkpoint.pt.")
+        raise SystemExit("Every task requires model=fotonete or model=path/to/checkpoint.pt.")
     imgsz = _parse_imgsz(args.pop("imgsz", 640))
 
     model = Fotonet(model_name)

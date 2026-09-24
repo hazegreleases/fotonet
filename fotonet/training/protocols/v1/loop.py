@@ -8,10 +8,104 @@ from datetime import datetime
 
 import torch
 from torch.utils.data import Subset
-from tqdm import tqdm
+from fotonet.utils.console import (
+    AgyProgressBar,
+    format_duration,
+    format_eta,
+    log_event,
+    print_completion_card,
+    print_epoch_summary,
+)
+from .schedules import WSDScheduler
 
 
 class TrainingLoopMixin:
+    # Empirical cost scaling of an epoch relative to a reference resolution:
+    # measured 512->576 ~= 1.15x and 512->640 ~= 1.38x on the target rig,
+    # i.e. pixels^1.35.  Used only until a stage has its own measured median.
+    _IMGSZ_COST_EXPONENT = 1.35
+    _ETA_QUANTUM_SEC = 600.0
+
+    def _median_last(self, values, count=5):
+        window = values[-count:]
+        return float(sum(window) / len(window)) if window else None
+
+    def _estimate_run_eta(self, next_epoch, total_epochs, steps_per_epoch_hint=1.0):
+        """Stage-aware remaining-time projection for the whole run.
+
+        Future epochs are summed with the measured median duration of their
+        own resolution stage when available, falling back to the best-measured
+        stage scaled by the empirical pixel-cost law.  Validation time is
+        projected from the median of the most recent validations, weighted by
+        how many of the remaining epochs will validate.  The estimate only
+        improves as stages get measured; it never assumes a stationary rate
+        across the progressive-resize boundaries.
+        """
+        if next_epoch >= total_epochs:
+            return 0.0
+        measured = {
+            imgsz: self._median_last(times)
+            for imgsz, times in self._epoch_time_by_imgsz.items()
+            if times
+        }
+        reference = None
+        if measured:
+            reference = min(measured.items(), key=lambda kv: kv[0])
+        remaining_sec = 0.0
+        for future_epoch in range(next_epoch, total_epochs):
+            imgsz = self._imgsz_for_epoch(future_epoch)
+            if imgsz in measured:
+                remaining_sec += measured[imgsz]
+            elif reference is not None:
+                ref_imgsz, ref_sec = reference
+                remaining_sec += ref_sec * (imgsz / float(ref_imgsz)) ** self._IMGSZ_COST_EXPONENT
+            else:
+                return None
+        val_median = self._median_last(self._val_seconds_history)
+        if val_median is not None:
+            remaining_epochs = total_epochs - next_epoch
+            remaining_vals = sum(
+                1
+                for future_epoch in range(next_epoch, total_epochs)
+                if (future_epoch + 1) % self.val_period == 0 or future_epoch == total_epochs - 1
+            )
+            remaining_sec += remaining_vals * val_median
+        return remaining_sec
+
+    def _display_run_eta(self, raw_sec):
+        """Quantize and smooth the displayed ETA: promise late, deliver early.
+
+        Estimates may only move down gradually (10-minute quantization keeps
+        the number calm between refreshes); increases propagate immediately
+        so a slower-than-planned run is never hidden from the operator.
+        """
+        if raw_sec is None:
+            return None
+        raw_sec = max(float(raw_sec), 0.0)
+        current = getattr(self, "_displayed_run_eta_sec", None)
+        if current is None or raw_sec >= current:
+            displayed = raw_sec
+        else:
+            displayed = max(raw_sec, current - max(current * 0.05, self._ETA_QUANTUM_SEC))
+        self._displayed_run_eta_sec = displayed
+        return format_eta(math.floor(displayed / self._ETA_QUANTUM_SEC) * self._ETA_QUANTUM_SEC)
+
+    def _wsd_phase_display(self, scheduler, steps_per_epoch):
+        """Human phase badge; during stable, count down epochs to decay."""
+        phase = self._wsd_phase_label()
+        if phase != "stable" or not isinstance(scheduler, WSDScheduler):
+            return phase
+        epochs_to_decay = max(
+            (scheduler.decay_start_iter - self.optimizer_step_count)
+            / max(steps_per_epoch, 1),
+            0.0,
+        )
+        if epochs_to_decay >= 1:
+            return f"stable ->D {int(epochs_to_decay)}ep"
+        if epochs_to_decay > 0:
+            return "stable ->D <1ep"
+        return "stable"
+
     def train(self, dataset, frozen_epochs=0, unfreeze_backbone_at=None):
         """
         Main training loop. 
@@ -120,9 +214,10 @@ class TrainingLoopMixin:
         if self.augmentation_passes is not None:
             initial_pass = min(int(self.start_epoch), len(self.augmentation_passes) - 1)
             self._set_train_augmentation_pass(initial_pass)
-            print(
-                f"[pass {initial_pass + 1}/{len(self.augmentation_passes)}] "
-                f"augmentation={self.augmentation_pass_names[initial_pass]}"
+            log_event(
+                f"Pass {initial_pass + 1}/{len(self.augmentation_passes)}: "
+                f"augmentation={self.augmentation_pass_names[initial_pass]}",
+                level="info",
             )
 
         if hasattr(self.full_train_set, "set_total_epochs"):
@@ -166,6 +261,16 @@ class TrainingLoopMixin:
             phase = f"epoch {self.start_epoch} resume state" if self.start_epoch > 0 else "training start"
             self._set_backbone_frozen(freeze_backbone, context=phase)
 
+        # WSD schedule geometry, resolved before the scheduler is built.
+        self._wsd_steps_per_epoch = steps_per_epoch
+        self._wsd_decay_iters = int(round(self.wsd_decay_fraction * self._lr_total_steps))
+        self._epoch_time_by_imgsz = {}
+        self._val_seconds_history = []
+        self._run_elapsed_before_epochs = float(self.training_wall_time_sec)
+        self._run_wall_start = time.time()
+        self._current_run_eta_sec = None
+        self._displayed_run_eta_sec = None
+
         for param_group in self.optimizer.param_groups:
             param_group.setdefault("initial_lr", self.lr0)
 
@@ -193,15 +298,55 @@ class TrainingLoopMixin:
         while self.infinite_epochs or epoch < self.epochs:
             epoch_start = time.time()
             epoch_images = 0
+
+            # WSD decay triggers: a DECAY file in the run directory may only
+            # pull the (already scheduled) decay start earlier.  Entering the
+            # decay phase re-anchors the EMA once so the average tracks the
+            # improving trajectory instead of lagging the stable plateau.
+            if self.lr_scheduler == "WSD" and isinstance(scheduler, WSDScheduler):
+                decay_flag = os.path.join(os.fspath(self.save_dir), "DECAY")
+                if os.path.isfile(decay_flag):
+                    at_step = self.optimizer_step_count
+                    if scheduler.trigger_early_decay(at_step):
+                        try:
+                            os.remove(decay_flag)
+                        except OSError:
+                            pass
+                        log_event(
+                            f"WSD: manual DECAY trigger accepted at optimizer step {at_step}",
+                            level="lr",
+                        )
+                if (
+                    self.wsd_ema_reanchor
+                    and not self._wsd_decay_triggered
+                    and scheduler.phase(self.optimizer_step_count) == "decay"
+                ):
+                    self._wsd_decay_triggered = True
+                    ramp_steps = max(
+                        int(self.wsd_ema_ramp_epochs * steps_per_epoch), 1
+                    )
+                    self.ema.reanchor(
+                        self.model,
+                        decay_start=self.wsd_ema_decay_start,
+                        warmup_steps=ramp_steps,
+                    )
+                    log_event(
+                        "WSD: decay phase entered - EMA re-anchored to live weights "
+                        f"(decay {self.wsd_ema_decay_start:g} -> {self.ema.decay_end:g} "
+                        f"over {int(self.wsd_ema_ramp_epochs)} epochs)",
+                        level="lr",
+                    )
+
             if self.device.type == "cuda":
                 torch.cuda.reset_peak_memory_stats(self.device)
             self.model.train()
             if self.augmentation_passes is not None and self._active_augmentation_pass != epoch:
                 self._set_train_augmentation_pass(epoch)
                 self._rebuild_train_prefetcher(train_sampler, train_shuffle, num_workers, train_pf_factor)
-                print(
-                    f"[pass {epoch + 1}/{len(self.augmentation_passes)}] "
-                    f"augmentation={self.augmentation_pass_names[epoch]}"
+                log_event(
+                    f"Pass {epoch + 1}/{len(self.augmentation_passes)}: "
+                    f"augmentation={self.augmentation_pass_names[epoch]}",
+                    level="info",
                 )
             if frozen_epochs > 0 and epoch < frozen_epochs:
                 self._set_backbone_frozen(True)
@@ -211,7 +356,7 @@ class TrainingLoopMixin:
                 self._set_dataset_imgsz(self.full_train_set, desired_imgsz)
                 self._set_dataset_imgsz(self.full_val_dataset, desired_imgsz)
                 self._rebuild_train_prefetcher(train_sampler, train_shuffle, num_workers, train_pf_factor)
-                print(f"[schedule] epoch={epoch+1} imgsz={desired_imgsz}")
+                log_event(f"Schedule: Epoch {epoch+1} imgsz={desired_imgsz}px", level="step")
             chunk_note = ""
 
             if hasattr(self.full_train_set, 'set_epoch'):
@@ -227,12 +372,12 @@ class TrainingLoopMixin:
             ):
                 self._rebuild_train_prefetcher(train_sampler, train_shuffle, num_workers, train_pf_factor)
                 close_mosaic_workers_refreshed = True
-                print(f"[schedule] epoch={epoch+1} close_mosaic workers refreshed")
+                log_event(f"Schedule: Epoch {epoch+1} close_mosaic workers refreshed", level="info")
 
             current_prefetcher = self.train_prefetcher
 
             if frozen_epochs > 0 and epoch == frozen_epochs and self.start_epoch < frozen_epochs:
-                print(f"\n[STABILITY] Epoch {epoch}: Unfreezing backbone...")
+                log_event(f"Stability: Epoch {epoch}: Unfreezing backbone...", level="warn")
                 self._set_backbone_frozen(False)
 
             running = {
@@ -261,10 +406,21 @@ class TrainingLoopMixin:
             )
 
             progress_unit = "Pass" if self.augmentation_passes is not None else "Epoch"
-            pbar = tqdm(
+            pbar = AgyProgressBar(
                 current_prefetcher,
-                desc=f"{progress_unit} {epoch+1:>3}/{self._epoch_label()}",
-                leave=False,
+                total=total_batches,
+                desc=progress_unit,
+                epoch=epoch + 1,
+                total_epochs=self._epoch_label(),
+                unit="it",
+            )
+            pbar.set_phase(self._wsd_phase_display(scheduler, steps_per_epoch))
+            pbar.set_run(
+                done=epoch * total_batches,
+                total=total_batches * max(self._epoch_count_for_progress(), 1),
+                eta_sec=self._current_run_eta_sec,
+                elapsed_sec=self._run_elapsed_before_epochs
+                + (time.time() - self._run_wall_start),
             )
             for i, (imgs, targets) in enumerate(pbar):
                 last_batch_index = i
@@ -288,7 +444,18 @@ class TrainingLoopMixin:
                     / float(reference_resolution * reference_resolution)
                 )
 
-                with torch.amp.autocast(self.device.type, enabled=self.use_amp, dtype=torch.float16):
+                if self.channels_last:
+                    if isinstance(imgs, dict):
+                        imgs = {
+                            key: value.contiguous(memory_format=torch.channels_last)
+                            if torch.is_tensor(value) and value.ndim == 4
+                            else value
+                            for key, value in imgs.items()
+                        }
+                    elif torch.is_tensor(imgs) and imgs.ndim == 4:
+                        imgs = imgs.contiguous(memory_format=torch.channels_last)
+
+                with torch.amp.autocast(self.device.type, enabled=self.use_amp, dtype=self.amp_dtype):
                     use_o2m = self._should_compute_o2m(self.criterion, epoch, self.global_step)
                     outputs = self.model(imgs, use_o2m=use_o2m)
                     criterion_kwargs = {
@@ -301,7 +468,7 @@ class TrainingLoopMixin:
                         targets,
                         **criterion_kwargs,
                     )
-                    if self.device.type == "cuda" and self.use_amp:
+                    if self.device.type == "cuda" and self.scale_gradients:
                         finite_flag = self._loss_dict_finite_flag(loss_dict, self.device)
                         amp_finite_window = finite_flag if amp_finite_window is None else (amp_finite_window & finite_flag)
                         amp_finite_entries.append((
@@ -331,7 +498,7 @@ class TrainingLoopMixin:
 
                 if accumulation_boundary:
                     stepped = self._optimizer_step(scheduler)
-                    if self.device.type == "cuda" and self.use_amp and not stepped:
+                    if self.device.type == "cuda" and self.scale_gradients and not stepped:
                         self._assert_finite_loss_window(amp_finite_window, amp_finite_entries)
                     amp_finite_window = None
                     amp_finite_entries = []
@@ -361,12 +528,32 @@ class TrainingLoopMixin:
                     # the running aggregate while tqdm formats its postfix.
                     running_snapshot = dict(running)
                     regression_name = self._regression_loss_name()
-                    pbar.set_postfix(
-                        loss=f"{running_snapshot['loss'] / denom:.2f}",
-                        cls=f"{running_snapshot['cls'] / denom:.2f}",
-                        **{regression_name: f"{running_snapshot['regpc'] / denom:.2f}"},
-                        iou=f"{running_snapshot['iou'] / denom:.2f}",
-                        lr=f"{self.optimizer.param_groups[0]['lr']:.2e}",
+                    pbar.set_phase(self._wsd_phase_display(scheduler, steps_per_epoch))
+                    postfix = {
+                        "loss": f"{running_snapshot['loss'] / denom:.2f}",
+                        "cls": f"{running_snapshot['cls'] / denom:.2f}",
+                        regression_name: f"{running_snapshot['regpc'] / denom:.2f}",
+                        "iou": f"{running_snapshot['iou'] / denom:.2f}",
+                        "lr": f"{self.optimizer.param_groups[0]['lr']:.2e}",
+                    }
+                    if last_val_stats and "mAP50_95" in last_val_stats:
+                        postfix["mAP"] = (
+                            f"{float(last_val_stats['mAP50_95']):.3f}@e{last_val_stats.get('_epoch', '?')}"
+                        )
+                    if self.device.type == "cuda":
+                        postfix["vram"] = (
+                            f"{torch.cuda.max_memory_allocated(self.device) / 2**30:.1f}G"
+                        )
+                    pbar.set_postfix(**postfix)
+                    run_total_batches = total_batches * max(
+                        self._epoch_count_for_progress() - 0, 1
+                    )
+                    pbar.set_run(
+                        done=epoch * total_batches + (i + 1),
+                        total=run_total_batches,
+                        eta_sec=getattr(self, "_current_run_eta_sec", None),
+                        elapsed_sec=self._run_elapsed_before_epochs
+                        + (now_live_status - self._run_wall_start),
                     )
                     self._write_live_status(
                         self._live_status_payload(
@@ -379,6 +566,7 @@ class TrainingLoopMixin:
                         )
                     )
 
+            pbar.close()
             self._flush_running_metrics(
                 running,
                 running_accumulator,
@@ -387,11 +575,15 @@ class TrainingLoopMixin:
             # Flush remaining accumulated gradients only if last batch wasn't an accum boundary
             if last_accum_step != last_batch_index and n_steps > 0:
                 stepped = self._optimizer_step(scheduler)
-                if self.device.type == "cuda" and self.use_amp and not stepped:
+                if self.device.type == "cuda" and self.scale_gradients and not stepped:
                     self._assert_finite_loss_window(amp_finite_window, amp_finite_entries)
                 amp_finite_window = None
                 amp_finite_entries = []
                 epoch_had_optimizer_step = stepped or epoch_had_optimizer_step
+            train_end_time = time.time()
+            self._epoch_time_by_imgsz.setdefault(int(self.current_imgsz), []).append(
+                max(train_end_time - epoch_start, 1e-9)
+            )
 
             # Log training metrics per epoch
             regression_name = self._regression_loss_name()
@@ -406,6 +598,7 @@ class TrainingLoopMixin:
             }
             is_last = (not self.infinite_epochs) and (epoch == self.epochs - 1)
             will_validate = (epoch + 1) % self.val_period == 0 or is_last
+            is_best = False
 
             # Persist the completed optimization epoch before entering
             # validation. Validation is intentionally strict and may fail on
@@ -428,14 +621,17 @@ class TrainingLoopMixin:
                     val_workers,
                     val_pf_factor,
                 )
+                val_start_time = time.time()
                 val_stats = self._validate_with_retries(
                     val_loader,
                     epoch,
                     val_workers,
                     val_pf_factor,
                 )
+                self._val_seconds_history.append(max(time.time() - val_start_time, 1e-9))
                 val_stats["val_mode"] = val_mode
                 last_val_stats = dict(val_stats)
+                last_val_stats["_epoch"] = epoch + 1
                 log_entry.update(self._compact_validation_metrics(val_stats, self.coco_max_dets))
                 per_class = val_stats.get("per_class")
                 if isinstance(per_class, dict):
@@ -477,16 +673,17 @@ class TrainingLoopMixin:
                 ):
                     self.best_map = metric_score
                     self._save_best_checkpoint(epoch)
+                    is_best = True
                 if val_mode == "full" and self.lr_scheduler == "LRDropDown":
                     old_lr = float(self.optimizer.param_groups[0]["lr"])
                     scheduler.step(metric_score)
                     new_lr = float(self.optimizer.param_groups[0]["lr"])
                     log_entry["lr"] = new_lr
                     if new_lr < old_lr:
-                        print(
-                            f"[lr] LRDropDown {old_lr:.2e} -> {new_lr:.2e} "
-                            f"avg_move={scheduler.last_average_movement:.4f} "
-                            f"avg={scheduler.last_average:.4f} prev_avg={scheduler.last_previous_average:.4f}"
+                        log_event(
+                            f"LRDropDown {old_lr:.2e} -> {new_lr:.2e} "
+                            f"(avg_move={scheduler.last_average_movement:.4f}, avg={scheduler.last_average:.4f})",
+                            level="step",
                         )
 
             epoch_seconds = time.time() - epoch_start
@@ -541,26 +738,42 @@ class TrainingLoopMixin:
                 )
             if self.device.type == "cuda":
                 log_entry["peak_training_vram_mb"] = round(torch.cuda.max_memory_allocated(self.device) / 2**20, 2)
-            if will_validate:
-                val_text = (
-                    f"val({log_entry.get('val_mode', 'full')}) "
-                    f"P@{self.operating_conf:g}={log_entry['precision']:.4f} "
-                    f"R@{self.operating_conf:g}={log_entry['recall']:.4f} "
-                    f"mAP@.50={log_entry['mAP50']:.4f} mAP@.50:.95={log_entry['mAP50_95']:.4f} "
-                    f"AR{self.coco_max_dets}={log_entry[f'coco_AR{self.coco_max_dets}']:.4f}"
+                # Allocated is what the model needs; reserved is what the
+                # process is actually holding from the driver.  Only the second
+                # one moves when the allocator fragments, which is why a pool
+                # leak can run for seventeen epochs with a perfectly flat peak.
+                log_entry["reserved_training_vram_mb"] = round(torch.cuda.max_memory_reserved(self.device) / 2**20, 2)
+
+            # Refresh the run-level ETA at the epoch boundary using measured
+            # per-stage medians; the displayed value may only descend slowly.
+            total_epochs_for_progress = self._epoch_count_for_progress()
+            raw_eta = self._estimate_run_eta(epoch + 1, total_epochs_for_progress)
+            if raw_eta is not None:
+                self._current_run_eta_sec = raw_eta
+            display_eta = self._display_run_eta(self._current_run_eta_sec)
+            run_done_epochs = (epoch + 1) / max(total_epochs_for_progress, 1)
+            phase_for_summary = self._wsd_phase_display(scheduler, steps_per_epoch)
+            if os.environ.get("FOTONET_WSD_DEBUG"):
+                print(
+                    f"[WSD-DBG] ep{epoch + 1} steps/ep={steps_per_epoch} "
+                    f"opt_steps={self.optimizer_step_count} it={getattr(scheduler, 'it', '?')} "
+                    f"phase={self._wsd_phase_label()} lr={self.optimizer.param_groups[0]['lr']:.3e} "
+                    f"warmup={getattr(scheduler, 'warmup_iters', '?')} "
+                    f"decay_start={getattr(scheduler, 'decay_start_iter', '?')} "
+                    f"decay_iters={getattr(scheduler, 'decay_iters', '?')}"
                 )
-            else:
-                next_val = ((epoch + 1) // self.val_period + 1) * self.val_period
-                if not self.infinite_epochs:
-                    next_val = min(next_val, self.epochs)
-                val_text = f"val=skip next={next_val}"
-            log_unit = "pass" if self.augmentation_passes is not None else "epoch"
-            print(
-                f"[{log_unit} {epoch+1}/{self._epoch_label()}{chunk_note}] "
-                f"imgsz={self.current_imgsz} loss={log_entry['loss']:.4f} cls={log_entry['cls_loss']:.4f} "
-                f"{regression_name}={log_entry[f'{regression_name}_loss']:.4f} "
-                f"iou={log_entry['iou_loss']:.4f} lr={log_entry['lr']:.2e} "
-                f"{val_text} time={epoch_seconds:.1f}s"
+            print_epoch_summary(
+                epoch=epoch + 1,
+                total_epochs=self._epoch_label(),
+                epoch_seconds=epoch_seconds,
+                metrics=log_entry,
+                val_metrics=val_stats if will_validate else None,
+                is_best=is_best,
+                val_mode=log_entry.get("val_mode", "full") if will_validate else "skip",
+                regression_name=regression_name,
+                phase=phase_for_summary,
+                run_progress=f"run {run_done_epochs * 100:.1f}%",
+                run_eta=display_eta,
             )
 
             with open(self.log_file, "a", encoding="utf-8") as f:
@@ -623,7 +836,9 @@ class TrainingLoopMixin:
             "last_validation": last_val_stats,
         }
         self.last_train_result = result
+        print_completion_card(result)
         return result
+
 
 
 __all__ = ["TrainingLoopMixin"]

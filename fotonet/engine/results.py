@@ -447,6 +447,34 @@ class DetectionBoxes:
     def to_tensor(self):
         return self.tensor
 
+    @property
+    def xywh(self):
+        """Center-anchored [N, 4] boxes in pixels (scaled to the image)."""
+        t = self.tensor
+        if t.numel() == 0:
+            return t
+        img_w, img_h = self.image_size
+        scale = torch.tensor(
+            [float(img_w), float(img_h), float(img_w), float(img_h)],
+            dtype=t.dtype,
+            device=t.device,
+        )
+        return t * scale
+
+    @property
+    def xyxy(self):
+        """Corner [N, 4] boxes in pixels, matching the JSON export contract."""
+        t = self.tensor
+        if t.numel() == 0:
+            return t
+        cx, cy, w, h = t[:, 0], t[:, 1], t[:, 2], t[:, 3]
+        img_w, img_h = self.image_size
+        x1 = (cx - w * 0.5) * float(img_w)
+        y1 = (cy - h * 0.5) * float(img_h)
+        x2 = (cx + w * 0.5) * float(img_w)
+        y2 = (cy + h * 0.5) * float(img_h)
+        return torch.stack((x1, y1, x2, y2), dim=-1)
+
     def find_biggest(self, cls=None):
         return self._find_by_area(cls=cls, mode="max")
 

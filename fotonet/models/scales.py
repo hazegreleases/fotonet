@@ -1,39 +1,33 @@
-"""Strict launcher-facing access to the production registry."""
+"""Strict launcher-facing access to the fotonete registry.
 
-from fotonet.models.v1.registry import (
-    MODEL_IDS,
-    available_models,
-    is_model_ref,
-    load_model_config,
-    normalize_model_config,
-)
+The training protocol's checkpoint metadata goes through here; the shape of
+this mapping is part of the launcher contract and stays frozen.
+"""
+
+from fotonet.models.e import registry as e_registry
 
 
 def available_model_scales():
-    return tuple(model_id.removeprefix("fotonet") for model_id in MODEL_IDS)
+    return ("e",)
 
 
 def is_model_scale_ref(value):
-    return is_model_ref(value)
+    return e_registry.is_model_ref(value)
 
 
 def load_scale_config(value):
-    config = load_model_config(value)
-    # The current launcher and in-progress checkpoint use this explicit
-    # temporary identity. It does not enable alternate graph construction.
+    config = e_registry.load_model_config(value)
     return {
         **config,
         "architecture": "standard",
-        "width_multiple": {
-            "n": 0.25, "s": 0.50, "m": 0.75, "l": 1.0, "x": 1.25,
-        }[config["profile"]],
+        "width_multiple": 1.0,
         "depth_multiple": 1.0,
-        "arch_version": 4,
-        "head_version": 4,
-        "foundation_version": 2,
+        "arch_version": 6,
+        "head_version": 6,
+        "foundation_version": 3,
         "foundation_profile": config["profile"],
-        "foundation_fingerprint": _candidate_fingerprint(config["profile"]),
-        "p2_head": config["p2"],
+        "foundation_fingerprint": config["architecture_fingerprint"],
+        "p2_head": False,
         "neck_fusion": "concat",
         "neck_iema": False,
         "p2_context_blocks": 0,
@@ -42,7 +36,7 @@ def load_scale_config(value):
         "p4_extra_blocks": 0,
         "p5_extra_blocks": 0,
         "p5_gate_blocks": 0,
-        "p5_psa_blocks": 1,
+        "p5_psa_blocks": 0,
         "fold": {
             "enabled": False,
             "factor": 2,
@@ -51,9 +45,3 @@ def load_scale_config(value):
             "detail_path": True,
         },
     }
-
-
-def _candidate_fingerprint(profile):
-    from fotonet.models.foundation_specs import get_foundation_spec
-
-    return get_foundation_spec(profile).fingerprint

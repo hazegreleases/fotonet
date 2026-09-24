@@ -53,7 +53,7 @@ model.export(format="tensorrt", path="fotonet.engine", imgsz=640, half=True)
 
 ## CoreML
 
-CoreML code exists, but this alpha does not treat CoreML as certified unless a fresh platform-specific verification is published.
+CoreML code exists, but this release does not treat CoreML as certified unless a fresh platform-specific verification is published.
 
 ## Output Format
 

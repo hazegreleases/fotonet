@@ -241,10 +241,12 @@ class ValidationProtocolMixin:
             self.nc,
             conf=self.val_conf,
             coco_max_dets=self.coco_max_dets,
+            max_det=self.val_max_det,
             operating_conf=self.operating_conf,
             operating_iou=self.operating_iou,
             amp=self.val_amp,
             class_names=self.class_names,
+            progress=True,
         )
         val_time = max(time.time() - val_start, 1e-9)
         metrics["val_time_sec"] = float(val_time)

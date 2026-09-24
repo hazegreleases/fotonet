@@ -6,6 +6,7 @@ from fotonet._version import __version__
 
 __all__ = [
     "Fotonet",
+    "FastPredictor",
     "Results",
     "DetectionBox",
     "DetectionBoxes",
@@ -35,10 +36,12 @@ def _load_public_api():
         Results,
         Vector2,
     )
+    from fotonet.fast import FastPredictor
 
     public = {
         "Fotonet": Fotonet,
         "FOTONET": Fotonet,
+        "FastPredictor": FastPredictor,
         "Results": Results,
         "DetectionBox": DetectionBox,
         "DetectionBoxes": DetectionBoxes,

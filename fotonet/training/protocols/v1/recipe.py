@@ -62,7 +62,9 @@ class RecipeProtocolMixin:
             return "Cosine"
         if raw in {"lrdropdown", "dropdown", "plateau", "reducelronplateau"}:
             return "LRDropDown"
-        raise ValueError("lr_scheduler must be 'Cosine' or 'LRDropDown'")
+        if raw in {"wsd", "warmupstabledecay"}:
+            return "WSD"
+        raise ValueError("lr_scheduler must be 'Cosine', 'LRDropDown', or 'WSD'")
 
     @staticmethod
     def _normalize_best_metric(name):

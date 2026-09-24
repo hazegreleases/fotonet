@@ -1,10 +1,10 @@
 """
-FOTONET matchers — GPU score construction with compact CPU conflict
+FOTONET matchers -- GPU score construction with compact CPU conflict
 resolution only when a one-to-one collision requires it.
 
 TaskAlignedAssigner (O2M):
   - Fully vectorized - zero Python loops over M
-  - Uses real feat_shapes from head output — no back-inference formula
+  - Uses real feat_shapes from head output -- no back-inference formula
 
 TaskAlignedO2OAssigner (NMS-free branch):
   - Uses an on-device no-conflict fast path
@@ -179,17 +179,19 @@ def _compact_greedy_candidates(candidate_values, candidate_preds, n_preds, n_tar
 
 class TaskAlignedAssigner(nn.Module):
     """
-    Task-Aligned One-to-Many assigner. Fully vectorized — zero Python loops
+    Task-Aligned One-to-Many assigner. Fully vectorized -- zero Python loops
     over the number of GT objects (M). Accepts real feat_shapes from the head.
     """
     def __init__(self, topk=10, alpha=1.0, beta=2.0, min_small_assign=4,
                  small_obj_px=8.0, strides=(8, 16, 32),
                  center_radius_cells=2.5, center_prior_cells=5.0,
-                 proposal_rounds=4):
+                 proposal_rounds=4, stal=True, stal_weight=0.25):
         super().__init__()
         self.topk   = topk
         self.alpha  = alpha
         self.beta   = beta
+        self.stal   = bool(stal)
+        self.stal_weight = float(stal_weight)
         self.min_small_assign = int(min_small_assign)
         self.small_obj_px = float(small_obj_px)
         self.center_radius_cells = float(center_radius_cells)
@@ -715,6 +717,11 @@ class TaskAlignedAssigner(nn.Module):
                 * iou.pow(self.beta)
                 * in_gt
             )
+            if self.stal:
+                # STAL: Small Target-Aware Label Assignment
+                # Relieves penalty for small targets whose IoU fluctuates under discrete grid shifts
+                stal_weight = 1.0 + self.stal_weight * (1.0 - target_area.sqrt().clamp(0.0, 1.0))
+                alignment = alignment * stal_weight[:, None, :]
             empty = alignment.max(dim=1).values.le(0) & valid
             anchor_radius = geometry["anchor_strides"].reshape(1, -1, 1)
             center_prior = (
@@ -862,7 +869,7 @@ class TaskAlignedO2OAssigner(TaskAlignedAssigner):
     def __init__(self, topk=1, alpha=1.0, beta=2.0, min_small_assign=1,
                  small_obj_px=8.0, strides=(8, 16, 32), exact=False,
                  center_radius_cells=2.5, center_prior_cells=5.0,
-                 proposal_rounds=4):
+                 proposal_rounds=4, stal=True, stal_weight=0.25):
         super().__init__(
             topk=topk,
             alpha=alpha,
@@ -873,6 +880,8 @@ class TaskAlignedO2OAssigner(TaskAlignedAssigner):
             center_radius_cells=center_radius_cells,
             center_prior_cells=center_prior_cells,
             proposal_rounds=proposal_rounds,
+            stal=stal,
+            stal_weight=stal_weight,
         )
         self.exact = bool(exact)
 

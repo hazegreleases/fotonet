@@ -115,6 +115,142 @@ class _AverageMovementLRDropDown:
 _MedianLRDropDown = _AverageMovementLRDropDown
 
 
+WSD_DECAY_SHAPES = ("linear", "cosine", "sqrt")
+
+
+class WSDScheduler:
+    """Warmup-Stable-Decay LR schedule stepped per optimizer update.
+
+    Warmup rises linearly from ``min_lr`` to ``lr0``; the stable phase holds
+    ``lr0``; decay then falls from the anchored LR back to ``min_lr`` over
+    ``decay_iters`` optimizer steps using one of three shapes.  Decay normally
+    starts at the scheduled step, and an external trigger (a ``DECAY`` file in
+    the run directory or an explicit epoch) may only pull that start earlier -
+    the earliest trigger wins.  State round-trips through ``state_dict`` so
+    resume is exact.
+    """
+
+    def __init__(
+        self,
+        optimizer,
+        lr0: float,
+        min_lr: float,
+        warmup_iters: int,
+        decay_iters: int,
+        decay_start_iter: int,
+        decay_shape: str = "linear",
+    ):
+        if decay_shape not in WSD_DECAY_SHAPES:
+            raise ValueError(f"decay_shape must be one of {WSD_DECAY_SHAPES}, got {decay_shape!r}")
+        self.optimizer = optimizer
+        self.lr0 = float(lr0)
+        self.min_lr = float(min_lr)
+        self.warmup_iters = max(int(warmup_iters), 0)
+        self.decay_iters = max(int(decay_iters), 1)
+        self.decay_shape = decay_shape
+        self.scheduled_decay_start = max(int(decay_start_iter), 0)
+        self.earliest_decay_start: int | None = None
+        self.anchor_lr: float | None = None
+        self.it = 0
+
+    @property
+    def decay_start_iter(self) -> int:
+        """Effective decay start: the earliest of scheduled and triggered."""
+        starts = [self.scheduled_decay_start]
+        if self.earliest_decay_start is not None:
+            starts.append(self.earliest_decay_start)
+        return min(starts)
+
+    def phase(self, it: int | None = None) -> str:
+        it = self.it if it is None else int(it)
+        if it < self.warmup_iters:
+            return "warmup"
+        if it < self.decay_start_iter:
+            return "stable"
+        return "decay"
+
+    def lr_at(self, it: int) -> float:
+        it = max(int(it), 0)
+        start = self.decay_start_iter
+        if it >= start:
+            t = (it - start) / float(self.decay_iters)
+            t = min(max(t, 0.0), 1.0)
+            anchor = self.anchor_lr if self.anchor_lr is not None else self.lr_at_pre_decay(start)
+            if self.decay_shape == "linear":
+                f = 1.0 - t
+            elif self.decay_shape == "cosine":
+                f = 0.5 * (1.0 + math.cos(math.pi * t))
+            else:  # sqrt: 1 - sqrt(t), the shape that holds LR high longest
+                f = 1.0 - math.sqrt(t)
+            return self.min_lr + (anchor - self.min_lr) * f
+        if it < self.warmup_iters:
+            span = max(self.warmup_iters, 1)
+            return self.min_lr + (self.lr0 - self.min_lr) * (it / float(span))
+        return self.lr0
+
+    def lr_at_pre_decay(self, it: int) -> float:
+        """Schedule value ignoring decay (used to anchor the decay curve)."""
+        if it < self.warmup_iters:
+            span = max(self.warmup_iters, 1)
+            return self.min_lr + (self.lr0 - self.min_lr) * (it / float(span))
+        return self.lr0
+
+    def step(self, it: int | None = None) -> float:
+        if it is None:
+            self.it += 1
+            it = self.it
+        else:
+            it = max(int(it), 0)
+            self.it = it
+        lr = self.lr_at(it)
+        for group in self.optimizer.param_groups:
+            group["lr"] = lr
+        return lr
+
+    def trigger_early_decay(self, at_iter: int) -> bool:
+        """Pull the decay start earlier if the request precedes the plan."""
+        at_iter = max(int(at_iter), 0)
+        if at_iter >= self.decay_start_iter:
+            return False
+        self.earliest_decay_start = at_iter
+        self.anchor_lr = self.lr_at_pre_decay(at_iter)
+        return True
+
+    def decay_finished(self, it: int | None = None) -> bool:
+        it = self.it if it is None else int(it)
+        return it >= self.decay_start_iter + self.decay_iters
+
+    def get_last_lr(self):
+        return [float(group["lr"]) for group in self.optimizer.param_groups]
+
+    def state_dict(self) -> dict:
+        return {
+            "lr0": self.lr0,
+            "min_lr": self.min_lr,
+            "warmup_iters": self.warmup_iters,
+            "decay_iters": self.decay_iters,
+            "decay_shape": self.decay_shape,
+            "scheduled_decay_start": self.scheduled_decay_start,
+            "earliest_decay_start": self.earliest_decay_start,
+            "anchor_lr": self.anchor_lr,
+            "it": self.it,
+        }
+
+    def load_state_dict(self, sd: dict) -> None:
+        self.lr0 = float(sd["lr0"])
+        self.min_lr = float(sd["min_lr"])
+        self.warmup_iters = int(sd["warmup_iters"])
+        self.decay_iters = int(sd["decay_iters"])
+        self.decay_shape = str(sd["decay_shape"])
+        self.scheduled_decay_start = int(sd["scheduled_decay_start"])
+        earliest = sd.get("earliest_decay_start")
+        self.earliest_decay_start = None if earliest is None else int(earliest)
+        anchor = sd.get("anchor_lr")
+        self.anchor_lr = None if anchor is None else float(anchor)
+        self.it = int(sd.get("it", 0))
+        self.step(self.it)
+
+
 class SchedulesProtocolMixin:
     def _restore_scheduler_lr(self, scheduler):
         """Scheduler state restores counters; explicitly sync optimizer LRs too."""
@@ -138,11 +274,38 @@ class SchedulesProtocolMixin:
                 min_lr=self.lr_drop_min_lr,
                 initial_best=initial_best,
             )
+        if self.lr_scheduler == "WSD":
+            decay_iters = max(int(round(self._wsd_decay_iters)), 1)
+            scheduled_start = max(self._lr_total_steps - decay_iters, 0)
+            if self.wsd_decay_start_epoch is not None:
+                epoch_start = max(int(self.wsd_decay_start_epoch), 0)
+                scheduled_start = min(
+                    scheduled_start,
+                    epoch_start * max(int(getattr(self, "_wsd_steps_per_epoch", 1)), 1),
+                )
+            return WSDScheduler(
+                self.optimizer,
+                lr0=self.lr0,
+                min_lr=self.lrf * self.lr0,
+                warmup_iters=self._warmup_steps,
+                decay_iters=decay_iters,
+                decay_start_iter=scheduled_start,
+                decay_shape=self.wsd_decay_shape,
+            )
         return optim.lr_scheduler.LambdaLR(
             self.optimizer,
             lr_lambda=self._lr_lambda,
             last_epoch=scheduler_last_epoch,
         )
+
+    def _wsd_phase_label(self) -> str:
+        """Current WSD phase for telemetry; empty for non-WSD schedules."""
+        if self.lr_scheduler != "WSD":
+            return ""
+        scheduler = getattr(self, "_active_scheduler", None)
+        if isinstance(scheduler, WSDScheduler):
+            return scheduler.phase()
+        return "stable"
 
     def _restore_lr_scheduler_state(self, scheduler):
         if self.resume_ckpt is None:
@@ -157,14 +320,13 @@ class SchedulesProtocolMixin:
         ):
             scheduler.load_state_dict(self.resume_ckpt["scheduler_state"])
             self._restore_scheduler_lr(scheduler)
-            print(f"[INFO] Restored {self.lr_scheduler} scheduler state.")
             return
         raise ValueError(
             "Resume checkpoint scheduler identity/state does not match the current protocol"
         )
 
     def _lr_lambda(self, optimizer_step):
-        """Warmup (1% → 100%) then cosine annealing."""
+        """Warmup (1% -> 100%) then cosine annealing."""
         step = max(int(optimizer_step), 0)
         warmup_steps = max(int(getattr(self, "_warmup_steps", 0)), 0)
         total_steps = max(int(getattr(self, "_lr_total_steps", 1)), 1)
@@ -201,4 +363,10 @@ class SchedulesProtocolMixin:
             print(f"[INFO] Backbone {state} ({context}).")
 
 
-__all__ = ["SchedulesProtocolMixin", "_AverageMovementLRDropDown", "_MedianLRDropDown"]
+__all__ = [
+    "SchedulesProtocolMixin",
+    "WSDScheduler",
+    "WSD_DECAY_SHAPES",
+    "_AverageMovementLRDropDown",
+    "_MedianLRDropDown",
+]

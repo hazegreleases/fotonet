@@ -22,7 +22,7 @@ def configure_data_worker(_worker_id=None):
     try:
         import cv2
 
-        cv2.setNumThreads(1)
+        cv2.setNumThreads(0)
     except (ImportError, AttributeError):
         pass
     # PyTorch normally applies this inside DataLoader workers itself.  Keep the
@@ -56,6 +56,37 @@ class ThreadPrefetcher:
         self._stop_event = threading.Event()
         self._worker_error = None
         self._cuda_stream = None
+
+    def _staging_stream(self):
+        """One staging stream for the lifetime of this prefetcher.
+
+        The caching allocator keys free blocks by the stream that allocated
+        them, so a block staged on epoch N's stream is only ever reusable by
+        epoch N's stream.  Creating a stream per epoch therefore strands one
+        epoch's staging buffers in a pool that nothing can draw from again:
+        ``memory_allocated`` stays flat while ``memory_reserved`` climbs every
+        epoch.  On a card with little headroom the driver eventually starts
+        backing allocations with host memory and throughput collapses -- which
+        a restart appears to "fix" only because it resets the pool.
+        """
+        if self.device.type != "cuda":
+            return None
+        if self._cuda_stream is None:
+            self._cuda_stream = torch.cuda.Stream(device=self.device)
+        return self._cuda_stream
+
+    @staticmethod
+    def _record_consumer_stream(value, stream):
+        """Tell the allocator the compute stream still needs these blocks."""
+        if torch.is_tensor(value):
+            if value.is_cuda:
+                value.record_stream(stream)
+        elif isinstance(value, dict):
+            for item in value.values():
+                ThreadPrefetcher._record_consumer_stream(item, stream)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                ThreadPrefetcher._record_consumer_stream(item, stream)
 
     @staticmethod
     def _move_target(target, device):
@@ -109,23 +140,38 @@ class ThreadPrefetcher:
         else:
             imgs, targets, ready, started = staged
         if ready is not None:
-            torch.cuda.current_stream(self.device).wait_event(ready)
+            consumer = torch.cuda.current_stream(self.device)
+            consumer.wait_event(ready)
+            # Waiting on the event orders the *kernels*; it tells the allocator
+            # nothing.  Without record_stream these blocks return to the staging
+            # stream's free list the moment Python drops the reference, and the
+            # next H2D copy can overwrite memory the compute stream is still
+            # reading.  record_stream is what makes that reuse wait.
+            self._record_consumer_stream(imgs, consumer)
+            self._record_consumer_stream(targets, consumer)
         return imgs, targets
 
     def __iter__(self):
         # A caller may abandon a previous iterator early.
         self.shutdown()
-        self._queue = queue.Queue(maxsize=self.queue_size)
-        self._stop_event.clear()
+        # Both the queue and the stop flag belong to *this* iteration.  They
+        # used to be shared instance state that the next __iter__ reset, so a
+        # producer thread that outlived its join timeout was un-stopped by the
+        # following epoch and went on feeding batches into the new epoch's
+        # queue from an old position in the dataset.
+        work_queue = queue.Queue(maxsize=self.queue_size)
+        stop_event = threading.Event()
+        self._queue = work_queue
+        self._stop_event = stop_event
         self._worker_error = None
         stop_token = object()
         error_token = object()
         not_ready = object()
 
         def _put(item):
-            while not self._stop_event.is_set():
+            while not stop_event.is_set():
                 try:
-                    self._queue.put(item, timeout=0.1)
+                    work_queue.put(item, timeout=0.1)
                     return True
                 except queue.Full:
                     continue
@@ -134,7 +180,7 @@ class ThreadPrefetcher:
         def _worker():
             try:
                 for batch in self.loader:
-                    if self._stop_event.is_set():
+                    if stop_event.is_set():
                         break
                     if not _put(batch):
                         return
@@ -146,13 +192,12 @@ class ThreadPrefetcher:
 
         self._thread = threading.Thread(target=_worker, daemon=True, name="fotonet-prefetch")
         self._thread.start()
-        if self.device.type == "cuda":
-            self._cuda_stream = torch.cuda.Stream(device=self.device)
+        self._staging_stream()
 
         def _next_raw(*, wait=True):
             while True:
                 try:
-                    item = self._queue.get(timeout=0.1) if wait else self._queue.get_nowait()
+                    item = work_queue.get(timeout=0.1) if wait else work_queue.get_nowait()
                 except queue.Empty:
                     if self._worker_error is not None and (self._thread is None or not self._thread.is_alive()):
                         raise RuntimeError("Data prefetch worker failed") from self._worker_error
@@ -217,9 +262,20 @@ class ThreadPrefetcher:
                 except queue.Empty:
                     break
         if self._thread is not None and self._thread.is_alive():
-            self._thread.join(timeout=2.0)
+            # The producer can only notice the stop flag between batches, so a
+            # slow decode legitimately needs more than the two seconds this
+            # used to allow.  A thread that still does not stop is now inert
+            # rather than dangerous -- it holds its own queue and its own,
+            # permanently set, stop flag -- but say so instead of dropping the
+            # reference silently.
+            self._thread.join(timeout=30.0)
+            if self._thread.is_alive():
+                print("[WARN] Data prefetch thread did not stop within 30s; abandoning it.")
         self._thread = None
-        self._cuda_stream = None
+        self._queue = None
+        # The staging stream deliberately outlives the iterator: see
+        # _staging_stream for why recreating it per epoch fragments the
+        # caching allocator.
 
     def __len__(self):
         return len(self.loader)
@@ -282,9 +338,28 @@ class EMA:
                 else:
                     ema_value.copy_(source)
             # One foreach launch per device/dtype replaces a Python-launched
-            # kernel for every floating parameter and buffer. State names,
+            # kernel for every floating parameter and buffer.  State names,
             # values, decay schedule, and checkpoint representation are
             # unchanged.
             update_weight = 1.0 - decay
             for ema_values, source_values in floating_groups.values():
                 torch._foreach_lerp_(ema_values, source_values, update_weight)
+
+    def reanchor(self, model, decay_start=0.99, decay_end=None, warmup_steps=None):
+        """Restart the average from the live weights (WSD decay entry).
+
+        The stable-phase average lags behind the rapidly improving decay
+        trajectory, so at the warmup->decay boundary the shadow weights are
+        reset to the live model and the decay ramp restarts from a faster
+        ``decay_start`` toward ``decay_end``.  Checkpoints written after this
+        call capture the restarted schedule exactly.
+        """
+        with torch.no_grad():
+            current_model = model._orig_mod if hasattr(model, "_orig_mod") else model
+            self.ema.load_state_dict(current_model.state_dict())
+        self.decay_start = float(decay_start)
+        if decay_end is not None:
+            self.decay_end = float(decay_end)
+        if warmup_steps is not None:
+            self.warmup_steps = max(int(warmup_steps), 1)
+        self.step_count = 0

@@ -42,7 +42,7 @@ class DataPipelineMixin:
         self.train_prefetcher = _ThreadPrefetcher(
             self.train_loader,
             device=self.device,
-            queue_size=2,
+            queue_size=4,
         )
         return self.train_prefetcher
 

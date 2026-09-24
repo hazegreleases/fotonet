@@ -1,0 +1,160 @@
+# FOTONET-E scratch recipe: the production all-dense nano detector.
+# Tailored to a single RTX 4060 8GB + i3-13100F (4C/4T) training station.
+#
+# Design contract (measured on the target hardware):
+#   - deploy graph ~1.70M params, ~5.43 GFLOPs (2xMACs) @ 640
+#   - eager FP16 speed is recorded in the published benchmark artifact
+#   - dataloader-bound training: 512px ~3.3+ steps/s, 640px ~2.8+ steps/s at
+#     batch 16 with 4 workers; the progressive resize schedule keeps the bulk
+#     of epochs in the >=3 steps/s regime on the 4-core CPU.
+# AdamW replaces the production SGD baseline: from-scratch dense-conv stacks
+# train stably at 1e-3 with decoupled weight decay, and the loop's EMA and
+# gradient clipping remain active unchanged.
+
+model: fotonete
+pretrained: false
+resume: false
+
+train:
+  epochs: 300
+  imgsz: 640
+  imgsz_schedule:
+    - [0.35, 512]
+    - [0.35, 576]
+    - [0.30, 640]
+  batch: 16
+  val_batch: 8
+  nbs: 128
+  workers: 4
+  pin_memory: true
+  cache_to_ram: false
+  cache_labels: true
+  disk_cache_images: false
+  amp: true
+  val_amp: true
+  cos_lr: true
+  # Trinity-agreed WSD schedule (Gemini x GLM-5.3 x GLM-5.3-flash):
+  # 3-epoch linear warmup -> constant 1e-3 -> cosine-in-decay-window over the
+  # final 20% of the run (60 epochs), floor 0.01x peak.  Decay starts at
+  # epoch 240, 30 epochs after the 576->640 transition so the loss spike
+  # re-stabilizes at constant LR before annealing.  No auto-triggers: touch
+  # a DECAY file in the run directory to pull the decay start earlier.
+  lr_scheduler: WSD
+  wsd_decay_shape: cosine
+  wsd_decay_fraction: 0.20
+  # Constant EMA 0.9999 through all phases (4.3-epoch horizon vs 60-epoch
+  # decay: no lag to fix; re-anchoring available via wsd_ema_reanchor).
+  wsd_ema_reanchor: false
+  compile_model: false
+  val_period: 1
+  val_subset_size: 0
+  full_val_after: 0.90
+  save_period: -1
+  slim_best: true
+  best_metric: mAP50_95
+
+optimizer:
+  # Trinity decision: AdamW + decoupled weight decay for the all-dense
+  # residual stacks (SGD remains available for controlled ablations, and
+  # MuSGD exists for a gated optimizer bake-off arm).
+  name: adamw
+  lr0: 0.001
+  lrf: 0.01
+  weight_decay: 0.05
+  warmup_epochs: 3
+
+augment:
+  mosaic: 0.90
+  # Mixup costs one extra decode per applied sample on the CPU-bound
+  # dataloader for ~0.3 AP; the 4-core window spends it elsewhere.
+  mixup: 0.0
+  copy_paste: 0.0
+  copy_paste_mode: flip
+  close_mosaic: 15
+  scale: 0.562
+  fliplr: 0.606
+  flipud: 0.0
+  degrees: 1.11
+  shear: 1.46
+  translate: 0.071
+  hsv_h: 0.014
+  hsv_s: 0.645
+  hsv_v: 0.566
+  bgr: 0.106
+  mixup_alpha: 32.0
+
+loss:
+  iou_type: siou
+  box: 7.5
+  cls: 1.0
+  dfl: 1.5
+  dfl_mean_over_coords: true
+  dual_branch_curriculum: true
+  dual_branch_start_epoch: 1
+  dual_branch_warmup_epochs: 70
+  o2o_start_weight: 0.35
+  o2o_end_weight: 1.0
+  o2m_start_weight: 1.0
+  o2m_end_weight: 0.25
+  o2o_label_smoothing: 0.01
+  o2m_label_smoothing: 0.05
+  focal_gamma_pos: 2.0
+  focal_gamma_neg: 2.0
+  quality_targets: true
+  quality_power: 1.0
+  quality_floor: 0.05
+  quality_start_epoch: 15
+  quality_warmup_epochs: 30
+  qfl_beta: 2.0
+  hard_negative_topk: 256
+  hard_negative_weight: 0.10
+  hard_negative_min_score: 0.15
+  hard_negative_start_epoch: 5
+  hard_negative_warmup_epochs: 19
+  o2o_weight: 1.0
+  o2m_weight: 1.0
+  o2m_full_epochs: 180
+  o2m_sparse_epochs: 270
+  o2m_every_n_steps: 2
+  o2m_disable_epoch: 270
+  consistency_weight: 0.35
+  consistency_start_epoch: 6
+  consistency_warmup_epochs: 24
+  consistency_cls_weight: 0.25
+  consistency_box_weight: 0.75
+  prog_loss: true
+  prog_start_epoch: 1
+  prog_warmup_epochs: 35
+  cls_start_factor: 1.50
+  box_start_factor: 1.30
+  dfl_start_factor: 0.85
+  quality: 1.0
+  quality_loss_start_epoch: 1
+  quality_loss_warmup_epochs: 15
+
+matcher:
+  topk: 8
+  alpha: 1.0
+  beta: 2.0
+  cost_class: 2.0
+  cost_bbox: 2.0
+  cost_giou: 1.0
+  exact_o2o: false
+  exact_o2o_warmup_epochs: null
+  exact_o2o_period: 1
+  exact_o2o_period_end_epoch: null
+  min_small_assign: 4
+  small_obj_px: 8.0
+
+smoke_limits:
+  max_epochs_2500_images: 15
+  max_epochs_5000_images: 8
+  recommended_quick_check:
+    epochs: 2
+    max_images: 256
+    imgsz: 128
+    val_subset_size: 64
+    full_val_after: 1.01
+    mosaic: 0.0
+    mixup: 0.0
+    copy_paste: 0.0

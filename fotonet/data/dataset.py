@@ -140,7 +140,9 @@ class DetectionDataset(Dataset):
         annotation_policy="fix",
         allow_missing_labels=False,
         source_recursive=True,
+        verbose=False,
     ):
+        self.verbose = bool(verbose)
         self.imgsz = self._normalize_imgsz(imgsz)
         self.augment = augment
         self.epoch = 0
@@ -198,11 +200,12 @@ class DetectionDataset(Dataset):
         stem_counts = Counter(stems)
         self._duplicate_image_stems = {stem for stem, count in stem_counts.items() if count > 1}
         self._label_dirs_by_image_dir = self._detect_label_dirs()
-        print(
-            f"[dataset] images={len(self.img_files)} augment={bool(augment)} "
-            f"policy={self.annotation_audit.policy}",
-            flush=True,
-        )
+        if self.verbose:
+            print(
+                f"[dataset] images={len(self.img_files)} augment={bool(augment)} "
+                f"policy={self.annotation_audit.policy}",
+                flush=True,
+            )
 
         if cache_labels:
             self._cache_all_labels()
@@ -377,7 +380,6 @@ class DetectionDataset(Dataset):
             "eval_ignore": np.zeros((len(labels_arr),), dtype=bool),
         }
 
-    @staticmethod
     @staticmethod
     def _parse_label_item(args):
         idx, label_path, num_classes, audit = args
@@ -581,7 +583,7 @@ class DetectionDataset(Dataset):
                 f"{kind}={count}" for kind, count in sorted(other_counts.items())
             )
             summary.append(details)
-        if summary:
+        if summary and self.verbose:
             print(f"[dataset] repaired {' '.join(summary)}", flush=True)
 
     def _cache_all_labels(self):
@@ -593,10 +595,11 @@ class DetectionDataset(Dataset):
             cache_path, label_paths
         ):
             elapsed = max(time.time() - start, 1e-9)
-            print(
-                f"[dataset] labels={count} cache=hit rate={count / elapsed:.0f}/s",
-                flush=True,
-            )
+            if self.verbose:
+                print(
+                    f"[dataset] labels={count} cache=hit rate={count / elapsed:.0f}/s",
+                    flush=True,
+                )
             if self.annotation_audit.policy in {"clamp", "fix"}:
                 self._print_label_health_summary()
             return
@@ -620,10 +623,11 @@ class DetectionDataset(Dataset):
                 executor.shutdown(wait=True)
 
         elapsed = max(time.time() - start, 1e-9)
-        print(
-            f"[dataset] labels={count} cache=built rate={count / elapsed:.0f}/s",
-            flush=True,
-        )
+        if self.verbose:
+            print(
+                f"[dataset] labels={count} cache=built rate={count / elapsed:.0f}/s",
+                flush=True,
+            )
         if self.annotation_audit.policy in {"clamp", "fix"}:
             self._print_label_health_summary()
         if self._disk_label_cache_safe:

@@ -69,6 +69,8 @@ class DiagnosticsMixin:
         return float(rate)
 
     def _print_train_header(self, n_train, n_val):
+        from fotonet.utils.console import print_train_card
+
         schedule_txt = " -> ".join(
             f"{int(limit * 100)}%:{size}" for limit, size in self.imgsz_schedule
         )
@@ -78,14 +80,37 @@ class DiagnosticsMixin:
                 val_txt = f"subset={self.val_subset_size}"
             else:
                 val_txt = f"subset={self.val_subset_size} until {int(self.full_val_after * 100)}%, then full"
-        unit = "passes" if self.augmentation_passes is not None else "epochs"
-        print(
-            f"\n[train] train={n_train} val={n_val} {unit}={self._epoch_label()} "
-            f"batch={self.batch_size} accum={self.accum_steps} imgsz={schedule_txt} "
-            f"optimizer={self.optimizer_name} lr={self.lr0:g} scheduler={self.lr_scheduler} "
-            f"amp={self.use_amp} validation={val_txt}"
-        )
 
+        model_name = getattr(self.model, "model_config", {}).get("model_id", getattr(self, "model_id", "fotonet"))
+        param_count = sum(p.numel() for p in self.model.parameters()) if hasattr(self.model, "parameters") else None
+        device_str = str(getattr(self, "device", "cpu"))
+        if getattr(self, "device", None) and getattr(self.device, "type", None) == "cuda":
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    name = torch.cuda.get_device_name(self.device)
+                    device_str = f"{self.device} ({name})"
+            except Exception:
+                pass
+
+        print_train_card(
+            model_name=model_name,
+            param_count=param_count,
+            device=device_str,
+            n_train=n_train,
+            n_val=n_val,
+            epochs=self._epoch_label(),
+            imgsz=schedule_txt,
+            batch_size=self.batch_size,
+            accum_steps=self.accum_steps,
+            optimizer_name=self.optimizer_name,
+            lr0=self.lr0,
+            scheduler_name=self.lr_scheduler,
+            amp=self.use_amp,
+            val_txt=val_txt,
+            resume_path=getattr(self, "resume_info", None),
+            recipe_name=getattr(self, "recipe_name", None),
+        )
 
 
 __all__ = ["DiagnosticsMixin"]

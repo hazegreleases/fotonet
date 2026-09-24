@@ -1,3 +1,3 @@
-"""Single source of truth for FOTO-NET's package version."""
+"""Single source of truth for fotonet package version."""
 
-__version__ = "0.8.0b2"
+__version__ = "1.0.0"

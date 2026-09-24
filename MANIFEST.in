@@ -6,3 +6,14 @@ prune docs/superpowers
 exclude AGENTS.md
 global-exclude *.py[cod]
 global-exclude __pycache__
+
+
+prune .github
+prune examples
+prune scripts
+prune weight
+prune crd
+prune foto-site
+exclude firebase.json
+exclude docs/release-checklist.md
+exclude docs/system-cleanup.md

@@ -3,7 +3,8 @@ from numbers import Integral
 from urllib.parse import urlparse
 import yaml
 
-from fotonet.models.v1.registry import normalize_model_config
+from fotonet.models.e import registry as e_registry
+from fotonet.models.e.registry import normalize_model_config
 
 
 def normalize_class_schema(nc=None, names=None, *, context="class schema"):
@@ -166,9 +167,13 @@ def load_model_cfg(cfg_path):
         path = os.path.join(_dir, "config", "models", os.path.basename(cfg_path))
     with open(path, "r") as f:
         data = yaml.safe_load(f)
-    return normalize_model_config(
-        data or {}, model_id=os.path.splitext(os.path.basename(path))[0], source=path
-    )
+    model_id = os.path.splitext(os.path.basename(path))[0]
+    if not e_registry.is_model_ref(model_id):
+        raise ValueError(
+            f"Unknown model config {model_id!r}; the only fotonet architecture "
+            "is 'fotonete'."
+        )
+    return e_registry.normalize_model_config(data or {}, model_id=model_id, source=path)
 
 
 def load_data_cfg(cfg_path):

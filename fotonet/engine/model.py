@@ -18,8 +18,14 @@ except Exception:
     cv2 = None
 
 from fotonet._version import __version__
-from fotonet.models.v1 import Detector
-from fotonet.models.v1.registry import available_models, is_model_ref, load_model_config
+from fotonet.models.e.graph import Detector
+from fotonet.models.resolve import (
+    available_models,
+    is_model_ref,
+    load_model_config,
+)
+from fotonet.models.release import resolve_release_checkpoint
+from fotonet.models.e.spec import EXPERIMENT_SCHEMA, experiment_fingerprint
 from fotonet.engine.results import Results
 from fotonet.utils.general import check_device
 from fotonet.utils.config import (
@@ -38,8 +44,9 @@ class Fotonet:
     """
     NMS-free object detection with one self-identifying production graph.
 
-    Use ``Fotonet('fotonetn')`` for an untrained architecture or
-    ``Fotonet('path/to.pt')`` for a supported checkpoint.
+    Use ``Fotonet('fotonete')`` for the verified v1 release checkpoint or
+    ``Fotonet('path/to.pt')`` for a supported local checkpoint. Use
+    ``Fotonet()`` for an untrained architecture.
     """
     MODELS = available_models()
 
@@ -63,7 +70,8 @@ class Fotonet:
         # Deployment transforms are applied to a clone.  This keeps the graph
         # with BatchNorm/O2M heads intact if the caller later invokes train().
         self._training_model_before_deploy = None
-        self._apply_model_cfg(load_model_config("fotonetn"), update_nc=False)
+        self._inference_channels_last = False
+        self._apply_model_cfg(load_model_config("fotonete"), update_nc=False)
         self.names = default_class_names(self.nc)
 
         if model_path is None:
@@ -95,9 +103,12 @@ class Fotonet:
             self.loaded_weight_path = model_path
 
         elif is_model_ref(path_lower):
+            checkpoint_path = resolve_release_checkpoint(path_lower)
             self._apply_model_cfg(load_model_config(path_lower), update_nc=nc is None)
             self.names = default_class_names(self.nc)
             self.model = self._new_model()
+            self.load(checkpoint_path)
+            self.loaded_weight_path = str(checkpoint_path)
             return
 
         else:
@@ -264,10 +275,7 @@ class Fotonet:
     def _new_model(self):
         model = Detector(
             nc=self.nc,
-            profile=self.profile,
-            use_p2=self.use_p2,
             reg_max=self.reg_max,
-            quality_head=self.quality_head,
         ).to(self.device)
         self.architecture_fingerprint = model.architecture_fingerprint
         model.model_config = {
@@ -287,13 +295,10 @@ class Fotonet:
 
     CHECKPOINT_FORMAT = 1
     TRAINING_PROTOCOL = 1
-    _ACTIVE_CANDIDATE_FINGERPRINT = (
-        "4d8755c10962efbcfc1a78ae9719b9101e7d8b28c7f9ccae82567747dacfd6de"
-    )
 
     @classmethod
     def _checkpoint_config(cls, checkpoint):
-        """Validate the sole production identity or the active-run migration identity."""
+        """Validate the sole supported production checkpoint identity."""
         if not isinstance(checkpoint, dict):
             raise ValueError("Checkpoint must be a self-identifying tensor-only mapping.")
         if checkpoint.get("checkpoint_format") == cls.CHECKPOINT_FORMAT:
@@ -306,10 +311,9 @@ class Fotonet:
                 raise ValueError("Checkpoint is missing required identity: " + ", ".join(missing))
             config = load_model_config(checkpoint["model_id"])
             config["nc"] = int(checkpoint["nc"])
-            expected = Detector(
-                nc=config["nc"], profile=config["profile"], use_p2=config["p2"],
-                reg_max=config["reg_max"], quality_head=config["quality_head"],
-            ).architecture_fingerprint
+            expected = experiment_fingerprint(
+                reg_max=config["reg_max"], nc=config["nc"]
+            )
             if int(checkpoint["architecture_schema"]) != config["architecture_schema"]:
                 raise ValueError("Unsupported checkpoint architecture_schema.")
             if str(checkpoint["architecture_fingerprint"]) != expected:
@@ -322,32 +326,27 @@ class Fotonet:
                     raise ValueError(f"Checkpoint has conflicting model_config.{key} metadata.")
             return config
 
-        model_config = checkpoint.get("model_config") or {}
-        candidate = (
-            checkpoint.get("arch_version") == 4
-            and checkpoint.get("head_version") == 4
-            and checkpoint.get("foundation_version") == 2
-            and checkpoint.get("foundation_profile") == "n"
-            and checkpoint.get("foundation_fingerprint") == cls._ACTIVE_CANDIDATE_FINGERPRINT
-            and model_config.get("foundation_profile") == "n"
-            and model_config.get("p2_head") is False
-            and int(model_config.get("reg_max", -1)) == 12
-            and model_config.get("quality_head") is False
-        )
-        if not candidate:
+        # The pre-fotonete lineages (schema 1 and 2: the removed n/s/m/l/x
+        # graphs) changed tensor shapes and are deliberately rejected rather
+        # than partially loaded.
+        legacy_schema = checkpoint.get("architecture_schema")
+        if legacy_schema is not None and int(legacy_schema) < EXPERIMENT_SCHEMA:
             raise ValueError(
-                "Unsupported checkpoint identity. Only checkpoint_format=1 artifacts and the "
-                "explicitly identified active fotonetn training checkpoint are accepted."
+                f"Checkpoint uses architecture_schema={int(legacy_schema)}, but this build is "
+                f"schema {EXPERIMENT_SCHEMA}. The graph changed shape; retrain rather than "
+                "attempting to port the weights."
             )
-        config = load_model_config("fotonetn")
-        config["nc"] = int(checkpoint.get("nc", model_config.get("nc", 80)))
-        return config
+        raise ValueError(
+            "Unsupported checkpoint identity. Only self-identifying checkpoint_format=1 "
+            f"artifacts at architecture_schema={EXPERIMENT_SCHEMA} are accepted."
+        )
 
     def _restore_training_model(self):
         """Restore the untouched training graph after a deploy-only transform."""
         if self._training_model_before_deploy is not None:
             self.model = self._training_model_before_deploy.to(self.device)
             self._training_model_before_deploy = None
+            self._inference_channels_last = False
 
     def _assert_trainable_graph(self):
         """Reject deploy-fused native graphs that cannot be faithfully unfused."""
@@ -475,7 +474,7 @@ class Fotonet:
         state = "frozen" if freeze else "unfrozen"
         print(f"[INFO] Backbone {state}.")
 
-    def train_from_recipe(self, data, recipe="fotonetn_scratch", **overrides):
+    def train_from_recipe(self, data, recipe="fotonete_scratch", **overrides):
         """Train from a packaged/resolved recipe, with explicit overrides.
 
         This method does not execute a hidden recipe: it returns the same value
@@ -488,8 +487,8 @@ class Fotonet:
         if recipe_model and not is_model_ref(recipe_model):
             raise ValueError(f"Recipe '{resolved['name']}' names unsupported model '{recipe_model}'.")
         settings = dict(resolved["settings"])
+        settings["recipe_name"] = resolved["name"]
         settings.update(overrides)
-        print(f"[INFO] Using training recipe '{resolved['name']}' from '{resolved['path']}'.")
         return self.train(data=data, **settings)
 
     def train(
@@ -500,6 +499,9 @@ class Fotonet:
         amp_init_scale=65536.0, val_amp=None, cos_lr=True,
         lr_scheduler="Cosine", lr_drop_factor=0.92, lr_drop_patience=5,
         lr_drop_threshold=0.001, lr_drop_min_lr=1e-5, weights=None,
+        wsd_decay_shape="linear", wsd_decay_fraction=0.25,
+        wsd_decay_start_epoch=None, wsd_ema_reanchor=True,
+        wsd_ema_decay_start=0.99, wsd_ema_ramp_epochs=20.0,
         resume=False, pretrained=False, compile_model=False, save_period=-1,
         slim_best=True, best_metric="mAP50_95", save_last=True,
         optimizer="sgd", momentum=0.937, weight_decay=0.0005,
@@ -507,7 +509,9 @@ class Fotonet:
         matcher_hyp=None, imgsz_schedule=None, val_subset_size=0,
         full_val_after=1.0, cache_labels=True, disk_cache_images=False,
         disk_cache_dir=None, unfreeze_backbone_at=None, coco_max_dets=100,
-        val_conf=0.0, operating_conf=0.25, operating_iou=0.50,
+        val_max_det=300, val_conf=0.0, operating_conf=0.25, operating_iou=0.50,
+        amp_dtype="float16", channels_last=True, cudnn_benchmark=True,
+        grad_clip_norm=10.0, recipe_name=None,
         annotation_policy="fix", allow_missing_labels=False,
         source_recursive=True, train_dataset=None, _training_run_id=None,
         sampling_hyp=None, afss_orbit_hyp=None, art_hyp=None,
@@ -639,6 +643,11 @@ class Fotonet:
             val_amp=val_amp, cos_lr=cos_lr, lr_scheduler=lr_scheduler,
             lr_drop_factor=lr_drop_factor, lr_drop_patience=lr_drop_patience,
             lr_drop_threshold=lr_drop_threshold, lr_drop_min_lr=lr_drop_min_lr,
+            wsd_decay_shape=wsd_decay_shape, wsd_decay_fraction=wsd_decay_fraction,
+            wsd_decay_start_epoch=wsd_decay_start_epoch,
+            wsd_ema_reanchor=wsd_ema_reanchor,
+            wsd_ema_decay_start=wsd_ema_decay_start,
+            wsd_ema_ramp_epochs=wsd_ema_ramp_epochs,
             resume_ckpt=resume_checkpoint, compile_model=compile_model,
             save_period=save_period, slim_best=slim_best, best_metric=best_metric,
             save_last=save_last, optimizer=optimizer, momentum=momentum,
@@ -648,13 +657,17 @@ class Fotonet:
             val_subset_size=val_subset_size, full_val_after=full_val_after,
             cache_labels=cache_labels, disk_cache_images=disk_cache_images,
             disk_cache_dir=disk_cache_dir, coco_max_dets=coco_max_dets,
+            val_max_det=val_max_det, amp_dtype=amp_dtype,
+            channels_last=channels_last, cudnn_benchmark=cudnn_benchmark,
+            grad_clip_norm=grad_clip_norm, recipe_name=recipe_name,
             val_conf=val_conf, operating_conf=operating_conf,
             operating_iou=operating_iou, annotation_policy=annotation_policy,
             allow_missing_labels=allow_missing_labels, source_recursive=source_recursive,
             _training_run_id=_training_run_id,
         )
         return trainer.train(dataset, frozen_epochs=frozen_epochs)
-    def prepare_for_inference(self, device=None, half=False, strip_o2m=False, fuse=True, matmul_precision=None):
+    def prepare_for_inference(self, device=None, half=False, strip_o2m=False, fuse=True,
+                              matmul_precision=None, channels_last=False):
         """Prepare an isolated deploy graph without mutating the train graph.
 
         Fusion, O2M stripping, and FP16 conversion happen on a deep copy.  If
@@ -672,6 +685,12 @@ class Fotonet:
             raw.fuse()
         if half and torch.device(device).type == "cuda":
             self.model.half()
+        if channels_last and torch.device(device).type == "cuda" and self.runtime_format is None:
+            # cuDNN's tensor-core convolution kernels want NHWC. Predict feeds
+            # contiguous NCHW, so without this the weights are the only thing
+            # in NHWC and every layer pays a layout transpose instead.
+            self.model.to(memory_format=torch.channels_last)
+            self._inference_channels_last = True
         if matmul_precision is not None:
             if matmul_precision not in {"highest", "high", "medium"}:
                 raise ValueError("matmul_precision must be 'highest', 'high', 'medium', or None.")
@@ -878,7 +897,15 @@ class Fotonet:
                             max_det=300, retain_images=True):
         if not sources:
             return []
-        device = device or self.device
+        device = torch.device(device or self.device)
+        if (bgr and device.type == "cuda" and cv2 is not None
+                and not os.environ.get("FOTONET_NO_FAST_PATH")
+                and all(isinstance(s, np.ndarray) and s.dtype == np.uint8
+                        and s.ndim == 3 and s.shape[2] == 3 for s in sources)):
+            return self._predict_bgr_fast(
+                sources, imgsz, conf, device, max_det=max_det,
+                retain_images=retain_images,
+            )
         tensors = []
         orig_imgs = []
         orig_shapes = []
@@ -896,6 +923,69 @@ class Fotonet:
             batch_tensor, orig_imgs, conf, letterbox_meta=metas, orig_shapes=orig_shapes,
             max_det=max_det, input_range_known=True,
         )
+
+    def _predict_bgr_fast(self, sources, imgsz, conf, device, max_det=300,
+                          retain_images=True):
+        """CUDA fast path for BGR NumPy frames: reusable uint8 canvas, pinned
+        staging buffer, fused on-device BGR->RGB + normalize.  Letterbox math,
+        selection semantics, and the Results contract are identical to the
+        portable path — only the staging changes."""
+        from fotonet.fast import _letterbox_params
+
+        target_h, target_w = imgsz
+        stage = getattr(self, "_fast_stage", None)
+        if (stage is None or stage["canvas"].shape != (len(sources), target_h, target_w, 3)):
+            canvas = np.full((len(sources), target_h, target_w, 3), 114, dtype=np.uint8)
+            stage = {
+                "canvas": canvas,
+                # a separate pinned mirror; the canvas keeps being rewritten
+                # in place while the previous transfer may still be in flight
+                "pinned": torch.from_numpy(canvas.copy()).pin_memory(),
+            }
+            self._fast_stage = stage
+        canvas = stage["canvas"]
+        pinned = stage["pinned"]
+        metas = []
+        orig_imgs = []
+        orig_shapes = []
+        for slot, img in enumerate(sources):
+            orig_h, orig_w, gain, new_h, new_w, pad_h, pad_w = _letterbox_params(
+                img.shape, target_h, target_w)
+            view = canvas[slot]
+            view.fill(114)
+            cv2.resize(img, (new_w, new_h),
+                       dst=view[pad_h:pad_h + new_h, pad_w:pad_w + new_w],
+                       interpolation=cv2.INTER_LINEAR)
+            metas.append({
+                "input_w": float(target_w),
+                "input_h": float(target_h),
+                "gain": float(gain),
+                "pad_w": float(pad_w),
+                "pad_h": float(pad_h),
+                "orig_w": float(orig_w),
+                "orig_h": float(orig_h),
+            })
+            orig_shapes.append((int(orig_h), int(orig_w)))
+            orig_imgs.append(
+                np.ascontiguousarray(img[..., ::-1]) if retain_images else None
+            )
+
+        pinned.copy_(torch.from_numpy(canvas))
+        gpu = pinned.to(device, non_blocking=True).permute(0, 3, 1, 2)[:, [2, 1, 0]]
+        try:
+            model_dtype = next(self.model.parameters()).dtype
+        except StopIteration:
+            model_dtype = torch.float32
+        # fp32 normalize before the model-dtype cast keeps pixel values
+        # bit-identical to the portable path
+        tensor = gpu.to(torch.float32).div_(255.0).to(model_dtype)
+        results = self._predict_tensor(
+            tensor, orig_imgs, conf, letterbox_meta=metas,
+            orig_shapes=orig_shapes, max_det=max_det, input_range_known=True,
+        )
+        # Materialize the whole frame before the pinned buffer is reused.
+        torch.cuda.synchronize(device)
+        return results
 
     @staticmethod
     def _orig_images_from_tensor(tensor, retain_images=True):
@@ -1114,6 +1204,8 @@ class Fotonet:
                 )
             tensor, letterbox_meta = self._letterbox_tensor_batch(tensor, *self._runtime_imgsz)
 
+        if getattr(self, "_inference_channels_last", False):
+            tensor = tensor.contiguous(memory_format=torch.channels_last)
         with torch.inference_mode():
             out = self.model(tensor)
         self._sync_runtime_output_schema(out)
@@ -1147,13 +1239,22 @@ class Fotonet:
 
     def _postprocess_single(self, pred_logits, pred_boxes, conf=0.25,
                             letterbox_meta=None, max_det=300):
-        scores, classes = pred_logits.sigmoid().max(-1)
+        probs = pred_logits.sigmoid()
+        num_anchors, num_classes = probs.shape
+        topk = min(int(max_det), num_anchors)
 
-        topk = min(int(max_det), int(scores.numel()))
-        scores, indices = torch.topk(scores, topk)
-        boxes, classes = pred_boxes[indices], classes[indices]
+        # Two-stage NMS-free selection. Reducing each anchor to its argmax class
+        # first would cap the image at one object per anchor, so two genuinely
+        # overlapping objects of different classes on the same cell could never
+        # both be reported. Stage one narrows to the strongest `topk` anchors,
+        # stage two ranks (anchor, class) pairs inside that shortlist.
+        _, anchor_idx = probs.amax(-1).topk(topk)
+        scores, pair_idx = probs[anchor_idx].flatten().topk(topk)
+        rows = anchor_idx[pair_idx.div(num_classes, rounding_mode="floor")]
+        classes = pair_idx.remainder(num_classes)
+
         mask = scores > conf
-        boxes, scores, classes = boxes[mask], scores[mask], classes[mask]
+        boxes, scores, classes = pred_boxes[rows[mask]], scores[mask], classes[mask]
 
         boxes = self._scale_boxes_from_letterbox(boxes, letterbox_meta)
         # Tensor input has no letterbox inverse transform. Clamp it too, so
@@ -1192,6 +1293,7 @@ class Fotonet:
         batch=8,
         conf=0.0,
         max_det=100,
+        decode_max_det=300,
         operating_conf=0.25,
         operating_iou=0.50,
         workers=0,
@@ -1337,6 +1439,7 @@ class Fotonet:
             model_nc,
             conf=conf,
             coco_max_dets=max_det,
+            max_det=max(int(decode_max_det), int(max_det)),
             operating_conf=operating_conf,
             operating_iou=operating_iou,
             amp=False,

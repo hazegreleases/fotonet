@@ -148,14 +148,3 @@ width before height.
 4. Fit the square or aspect ratio; restore a non-center anchor if required.
 5. Apply translation.
 6. Clamp last so reported geometry and extracted pixels agree at boundaries.
-
-## Complete scripts
-
-- `examples/transform_region.py`: model-free manual region composition.
-- `examples/extract_detection_crops.py`: class-filtered crops with focus,
-  aspect fitting, padding, and a JSON manifest.
-- `examples/anchor_zone_filter.py`: annotated contact-anchor zone decisions and
-  JSON output.
-- `examples/track_zone_events.py`: tracked enter/exit transitions as durable
-  JSON Lines records.
-- `examples/transform_crop.py`: deterministic synthetic transform smoke test.

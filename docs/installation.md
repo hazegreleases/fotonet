@@ -2,11 +2,11 @@
 
 ## Requirements
 
-FOTO-NET alpha targets Python 3.10 or newer. A CUDA-capable PyTorch install is recommended for training, but CPU installs are useful for API tests, documentation examples, and small export smoke checks.
+fotonet targets Python 3.10 or newer. A CUDA-capable PyTorch install is recommended for training, but CPU installs are useful for API tests, documentation examples, and small export smoke checks.
 
 Install PyTorch from the official PyTorch instructions for your platform first when you need a specific CUDA build.
 
-## Public Alpha Checkout
+## Development Checkout
 
 ```bash
 git clone https://github.com/hazegreleases/fotonet.git
@@ -17,7 +17,7 @@ python -m pip install -e ".[dev]"
 This registers the `fotonet` command and makes the local package importable.
 
 ```bash
-python examples/transform_crop.py
+python -c "import fotonet; print(fotonet.__version__)"
 ```
 
 ## Optional ONNX Dependencies
@@ -30,7 +30,7 @@ ONNX export works best when `onnx` is installed. `onnxsim` is optional and only 
 
 ## Validation Metrics
 
-`pycocotools` is installed with FOTO-NET because COCO-style validation is part of the supported training contract.
+`pycocotools` is installed with `fotonet` because COCO-style validation is part of the supported training contract.
 
 ## CUDA Notes
 
@@ -41,7 +41,7 @@ Use a PyTorch build that matches your driver and CUDA runtime. Training speed de
 If imports fail after cloning, run:
 
 ```bash
-python -c "from fotonet import Fotonet; print(Fotonet('fotonetn').nc)"
+python -c "from fotonet import Fotonet; print(Fotonet('fotonete').nc)"
 ```
 
 If export dependencies are missing, install them directly:

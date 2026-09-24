@@ -55,7 +55,9 @@ class OptimizationProtocolMixin:
 
     def _should_eager_finite_loss_check(self, global_step):
         """Keep strict checks everywhere except CUDA AMP's scaler-guarded hot path."""
-        if self.device.type != "cuda" or not self.use_amp:
+        # Only FP16 defers to the scaler. BF16 runs without one, so nothing else
+        # would catch a non-finite loss before it corrupts the weights.
+        if self.device.type != "cuda" or not getattr(self, "scale_gradients", self.use_amp):
             return True
         return int(global_step) % self._AMP_FINITE_CHECK_INTERVAL == 0
 
@@ -162,8 +164,11 @@ class OptimizationProtocolMixin:
 
     def _optimizer_step(self, scheduler=None):
         """Run one AMP-aware optimizer step and report whether it really happened."""
-        self.scaler.unscale_(self.optimizer)
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10.0)
+        if self.scaler.is_enabled():
+            self.scaler.unscale_(self.optimizer)
+        torch.nn.utils.clip_grad_norm_(
+            self.model.parameters(), getattr(self, "grad_clip_norm", 10.0)
+        )
         invocation_before = getattr(self, "_optimizer_invocation_count", None)
         # Compatibility fallback is used only by external/fake optimizers that
         # do not support step hooks. Production torch optimizers use the
@@ -187,7 +192,12 @@ class OptimizationProtocolMixin:
         if stepped:
             self.ema.update(self.model)
             self.optimizer_step_count = int(getattr(self, "optimizer_step_count", 0)) + 1
-            if scheduler is not None and getattr(self, "lr_scheduler", "Cosine") == "Cosine":
+            from .schedules import WSDScheduler
+
+            if scheduler is not None and (
+                getattr(self, "lr_scheduler", "Cosine") == "Cosine"
+                or isinstance(scheduler, WSDScheduler)
+            ):
                 scheduler.step()
         return stepped
 

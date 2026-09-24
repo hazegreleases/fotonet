@@ -1,17 +1,30 @@
 # Quick Start
 
-The first official weight is currently training. Until its verified release,
-named models construct untrained graphs and inference requires your supported checkpoint.
+`Fotonet("fotonete")` loads the verified `fotonete.pt` checkpoint from the
+public `v1.0.0` GitHub release. The checkpoint is downloaded once, verified by
+SHA-256, and cached locally; it is not bundled in the Python package.
 
 ## Construct a Model
 
 ```python
 from fotonet import Fotonet
 
-model = Fotonet("fotonetn")
+model = Fotonet("fotonete")
 ```
 
-Constructing a named scale builds an untrained architecture. Load a trusted checkpoint before expecting meaningful detections.
+Use `Fotonet()` when you intentionally need an untrained architecture for
+training or custom checkpoint loading.
+
+To use a local checkpoint explicitly, pass its path:
+
+```python
+from fotonet import Fotonet
+
+model = Fotonet("path/to/checkpoint.pt")
+```
+
+Set `FOTONETE_MODEL_PATH` to override the release checkpoint, or set
+`FOTONETE_CACHE_DIR` to choose the download cache directory.
 
 ## Run Inference With a Checkpoint
 
@@ -40,10 +53,9 @@ fotonet predict model=my_checkpoint.pt source=image.jpg conf=0.25 save=true
 ## Train a YOLO dataset
 
 ```bash
-curl -L https://hazegreleases.github.io/fotonet/examples/train.py -o train.py
-python train.py --model fotonetn --data data.yaml --epochs 100 --imgsz 640 --batch 16 --run-dir runs/fotonetn
+python -m fotonet.cli.main train model=fotonete data=data.yaml epochs=100 imgsz=640 batch=16 run_dir=runs/fotonete
 ```
 
-Add `--dry-run` to resolve the graph, checkpoint, paths, and training arguments
-without constructing a trainer or starting training. Add `--resume` to continue
-the same run from `runs/fotonetn/fotonet_last.pt`.
+Add `dry_run=true` to resolve the graph, checkpoint, paths, and training arguments
+without constructing a trainer or starting training. Add `resume=<checkpoint>` to continue
+the same run from `runs/fotonete/fotonet_last.pt`.

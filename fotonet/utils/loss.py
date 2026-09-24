@@ -49,6 +49,62 @@ def bbox_ciou(box1_xyxy, box2_xyxy, eps=1e-7):
     return iou - (rho2/c2 + v*alpha)
 
 
+def bbox_siou(box1_xyxy, box2_xyxy, eps=1e-7):
+    """SIoU (Scylla-IoU) between paired boxes. [N,4] vs [N,4].
+
+    Accelerates bounding box convergence by sequentially optimizing:
+    1. Angle Cost: directs gradient along coordinate axes (horizontal/vertical).
+    2. Distance Cost: scaled by angle cost, rapidly aligning box centroids.
+    3. Shape Cost: penalizes relative width and height discrepancies.
+    """
+    b1x1, b1y1, b1x2, b1y2 = box1_xyxy.unbind(1)
+    b2x1, b2y1, b2x2, b2y2 = box2_xyxy.unbind(1)
+
+    inter = (torch.min(b1x2, b2x2) - torch.max(b1x1, b2x1)).clamp(0) * \
+            (torch.min(b1y2, b2y2) - torch.max(b1y1, b2y1)).clamp(0)
+    w1, h1 = (b1x2 - b1x1).clamp(eps), (b1y2 - b1y1).clamp(eps)
+    w2, h2 = (b2x2 - b2x1).clamp(eps), (b2y2 - b2y1).clamp(eps)
+    union = w1 * h1 + w2 * h2 - inter + eps
+    iou = inter / union
+
+    cw = torch.max(b1x2, b2x2) - torch.min(b1x1, b2x1) + eps
+    ch = torch.max(b1y2, b2y2) - torch.min(b1y1, b2y1) + eps
+
+    cw1, ch1 = (b1x1 + b1x2) * 0.5, (b1y1 + b1y2) * 0.5
+    cw2, ch2 = (b2x1 + b2x2) * 0.5, (b2y1 + b2y2) * 0.5
+
+    s_cw = (cw2 - cw1).abs()
+    s_ch = (ch2 - ch1).abs()
+    sigma = torch.sqrt(s_cw ** 2 + s_ch ** 2) + eps
+
+    # Angle cost
+    sin_alpha = (s_ch / sigma).clamp(0.0, 1.0)
+    sin_beta = (s_cw / sigma).clamp(0.0, 1.0)
+    sin_angle = torch.where(sin_alpha > 0.70710678, sin_beta, sin_alpha)
+    angle_cost = 1.0 - 2.0 * torch.sin(torch.asin(sin_angle.clamp(0.0, 1.0 - eps)) - (math.pi / 4)) ** 2
+
+    # Distance cost
+    gamma = 2.0 - angle_cost
+    rho_x = ((cw2 - cw1) / cw) ** 2
+    rho_y = ((ch2 - ch1) / ch) ** 2
+    dist_cost = 2.0 - torch.exp(-gamma * rho_x) - torch.exp(-gamma * rho_y)
+
+    # Shape cost
+    omega_w = ((w1 - w2).abs() / torch.max(w1, w2)).pow(4)
+    omega_h = ((h1 - h2).abs() / torch.max(h1, h2)).pow(4)
+    shape_cost = (1.0 - torch.exp(-omega_w)) ** 4 + (1.0 - torch.exp(-omega_h)) ** 4
+
+    return iou - 0.5 * (dist_cost + shape_cost)
+
+
+def calc_box_iou(box1_xyxy, box2_xyxy, iou_type="siou", eps=1e-7):
+    """Compute pairwise box IoU using either Scylla-IoU (SIoU) or Complete-IoU (CIoU)."""
+    kind = str(iou_type or "siou").lower()
+    if kind == "siou":
+        return bbox_siou(box1_xyxy, box2_xyxy, eps=eps)
+    return bbox_ciou(box1_xyxy, box2_xyxy, eps=eps)
+
+
 def _dfl_loss(pred_dist, target, reg_max):
     """
     Distribution Focal Loss for one coordinate.
@@ -128,9 +184,9 @@ def calc_branch_loss(pred_logits, pred_boxes, pred_dist, targets, indices, nc,
                      quality_targets=True, quality_power=1.0, quality_floor=0.05,
                      quality_mix=1.0, qfl_beta=2.0, hard_negative_topk=256,
                      hard_negative_weight=0.15, hard_negative_min_score=0.15,
-                     dfl_mean_over_coords=True):
+                     dfl_mean_over_coords=True, iou_type="siou"):
     """
-    Compute classification (focal) + DFL + CIoU loss for one branch.
+    Compute classification (focal) + DFL + SIoU/CIoU loss for one branch.
     Returns SUMS of (cls_loss, dfl_loss, ciou_loss).
     """
     bs, n_queries, _ = pred_logits.shape
@@ -191,11 +247,11 @@ def calc_branch_loss(pred_logits, pred_boxes, pred_dist, targets, indices, nc,
 
     tgt_onehot[all_b_idx, all_p_idx, all_tgt_labels] = 1.0
 
-    # --- CIoU Loss (on decoded boxes) ---
+    # --- Box Geometry Loss (SIoU or CIoU on decoded boxes) ---
     all_pred_boxes = pred_boxes[all_b_idx, all_p_idx]
     p_xyxy = xywh_to_xyxy(all_pred_boxes)
     t_xyxy = xywh_to_xyxy(all_tgt_boxes)
-    matched_ciou = bbox_ciou(p_xyxy, t_xyxy)
+    matched_ciou = calc_box_iou(p_xyxy, t_xyxy, iou_type=iou_type)
     loss_ciou = (1 - matched_ciou).sum()
 
     # --- DFL Loss (on raw distributions) ---
@@ -214,11 +270,12 @@ def calc_branch_loss(pred_logits, pred_boxes, pred_dist, targets, indices, nc,
         reg_kind = "direct_ltrb"
     else:
         gt_ltrb = _bbox2dist(matched_anchors, all_tgt_boxes, matched_strides, imgsz, reg_max)
-        matched_dist = matched_dist.view(-1, 4, reg_max)  # [M, 4, reg_max]
-
-        reg_sum = torch.tensor(0.0, device=device)
-        for j in range(4):
-            reg_sum = reg_sum + _dfl_loss(matched_dist[:, j], gt_ltrb[:, j], reg_max).sum()
+        # All four coordinates share one distribution head, so scoring them as a
+        # single [M*4, reg_max] batch is the same sum in two kernels instead of
+        # eight. Both reshapes are match-major, so rows stay aligned.
+        reg_sum = _dfl_loss(
+            matched_dist.reshape(-1, reg_max), gt_ltrb.reshape(-1), reg_max
+        ).sum()
         if dfl_mean_over_coords:
             reg_sum = reg_sum / 4.0
         dfl_sum = reg_sum
@@ -445,12 +502,14 @@ class DualLoss(nn.Module):
                  exact_o2o_warmup_epochs=None, exact_o2o_period=1,
                  exact_o2o_period_end_epoch=None,
                  quality=1.0, quality_loss_start_epoch=1,
-                 quality_loss_warmup_epochs=25):
+                 quality_loss_warmup_epochs=25,
+                 iou_type="siou"):
         super().__init__()
         self.nc          = nc
         self.reg_max     = reg_max
         self.matcher_o2o = matcher_o2o
         self.matcher_o2m = matcher_o2m
+        self.iou_type    = str(iou_type or "siou").lower()
         self.w_cls  = w_cls
         self.w_box  = w_box
         self.w_dfl  = w_dfl
@@ -704,6 +763,7 @@ class DualLoss(nn.Module):
                 hard_negative_weight=hard_negative_weight,
                 hard_negative_min_score=self.hard_negative_min_score,
                 dfl_mean_over_coords=self.dfl_mean_over_coords,
+                iou_type=self.iou_type,
             )
 
         if use_o2m:
@@ -726,6 +786,7 @@ class DualLoss(nn.Module):
                     hard_negative_weight=hard_negative_weight,
                     hard_negative_min_score=self.hard_negative_min_score,
                     dfl_mean_over_coords=self.dfl_mean_over_coords,
+                    iou_type=self.iou_type,
                 )
             active_o2m_weight = scheduled_o2m_weight
         else:
